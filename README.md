@@ -204,21 +204,37 @@ cu-datalake/
     └── glue-job-configs.json               # ETL job parameters
 ```
 
-## 💰 **Cost Estimate**
+## 💰 **One-Time Deployment Cost**
 
-**Monthly costs (us-west-2, production usage):**
-- **RDS t3.micro**: ~$15/month
-- **S3 Storage**: ~$5/month (with sample data)
-- **Glue Job Runs**: ~$10/month (weekly runs)
-- **Lambda/Step Functions**: ~$2/month
-- **KMS**: ~$1/month
-- **VPC (NAT Gateway)**: ~$35/month
-- **Total**: ~$68/month
+**Cost to deploy and run the complete pipeline once (us-west-2):**
 
-**Cost Optimization Options:**
-- Use VPC Endpoints instead of NAT Gateway: Save ~$21/month
-- S3 Intelligent Tiering: Save ~50% on storage costs
-- Reserved RDS instances: Save ~30% on database costs
+### **🆓 With AWS Free Tier (New Account)**
+- **RDS t3.micro**: $0 (750 hours free tier)
+- **S3 Storage**: $0 (5GB free tier)
+- **Glue Job Runs**: ~$2 (4 jobs × 10 DPUs × ~15 minutes total)
+- **Lambda Executions**: $0 (1M requests free tier)
+- **Step Functions**: $0 (4,000 state transitions free tier)
+- **KMS**: $0 (20,000 requests free tier)
+- **VPC/NAT Gateway**: ~$1.50 (1 hour usage)
+- **CloudWatch Logs**: $0 (5GB free tier)
+- **Total One-Time Cost**: **~$3.50**
+
+### **💳 Without Free Tier (Existing Account)**
+- **RDS t3.micro**: ~$0.50 (1 hour usage)
+- **S3 Storage**: ~$0.25 (sample data + output)
+- **Glue Job Runs**: ~$2.00 (4 jobs × 10 DPUs × ~15 minutes total)
+- **Lambda Executions**: ~$0.10 (data loading + automation)
+- **Step Functions**: ~$0.05 (state transitions)
+- **KMS**: ~$0.05 (encryption operations)
+- **VPC/NAT Gateway**: ~$1.50 (1 hour usage)
+- **CloudWatch Logs**: ~$0.10 (log storage)
+- **Total One-Time Cost**: **~$4.55**
+
+**💡 Cost Notes:**
+- Costs are for **single deployment and complete pipeline execution**
+- **Cleanup after testing**: Run `cdk destroy --all` to remove all resources
+- **Most expensive component**: NAT Gateway (~$1.50/hour) - removed during cleanup
+- **Data persists**: S3 data remains until manually deleted (~$0.25/month if kept)
 
 ## 🔄 **Individual Stack Deployment (Advanced)**
 
@@ -273,11 +289,14 @@ cdk destroy CreditUnionInfrastructureStack --region us-west-2
 **Credit Cards (2 columns):**
 - card_limit_amount, card_type
 
-**Data Quality (3 columns):**
-- product_count, risk_category, data_quality_score, runid
+**Data Quality (2 columns):**
+- product_count, risk_category, data_quality_score
 
 **Partitions (4 columns):**
 - year, month, day, hour
+
+**Data Versioning (1 column):**
+- **runid** - Unique timestamp generated at Member360 job completion, enables data versioning and historical analysis in QuickSight and other analytical tools
 
 ## 🎯 **Success Criteria**
 
