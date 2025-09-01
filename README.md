@@ -298,7 +298,201 @@ cdk destroy CreditUnionInfrastructureStack --region us-west-2
 **Data Versioning (1 column):**
 - **runid** - Unique timestamp generated at Member360 job completion, enables data versioning and historical analysis in QuickSight and other analytical tools
 
-## 🎯 **Success Criteria**
+## 📊 **Sample Analytics with Amazon Athena**
+
+After deployment, you can immediately analyze your Member 360 data using Amazon Athena - no additional setup required!
+
+### **🔧 Athena Setup (One-Time)**
+
+1. **Open Amazon Athena Console**
+   - Go to AWS Console → Search "Athena" → Click "Amazon Athena"
+
+2. **Set Query Result Location**
+   - Click "Settings" tab → "Manage"
+   - Set location: `s3://aws-athena-query-results-YOUR_ACCOUNT_ID-us-west-2/`
+   - Click "Save"
+
+3. **Select Database**
+   - In "Database" dropdown, select: **`creditunion_consume`**
+   - You should see the `member_profile` table appear
+
+4. **Verify Data**
+   ```sql
+   -- Quick test query
+   SELECT COUNT(*) as total_members 
+   FROM member_profile;
+   ```
+   **Expected Result:** ~2,000 members
+
+### **📈 Sample Business Intelligence Queries**
+
+Copy and paste these queries into Athena to get immediate insights:
+
+#### **1. Data Quality Dashboard**
+```sql
+-- Overall data quality assessment
+SELECT 
+    COUNT(*) as total_members,
+    ROUND(AVG(data_quality_score), 1) as avg_quality_score,
+    COUNT(CASE WHEN data_quality_score >= 80 THEN 1 END) as high_quality_records,
+    ROUND(COUNT(CASE WHEN data_quality_score >= 80 THEN 1 END) * 100.0 / COUNT(*), 1) as high_quality_percentage,
+    COUNT(CASE WHEN email IS NOT NULL THEN 1 END) as members_with_email,
+    COUNT(CASE WHEN phone IS NOT NULL THEN 1 END) as members_with_phone
+FROM member_profile;
+```
+**Business Value:** Understand data completeness and quality for decision-making confidence.
+
+#### **2. Member Segmentation Analysis**
+```sql
+-- Member segments by balance and digital engagement
+SELECT 
+    CASE 
+        WHEN total_balance >= 50000 THEN 'High Value ($50K+)'
+        WHEN total_balance >= 10000 THEN 'Medium Value ($10K-$50K)' 
+        ELSE 'Standard (<$10K)'
+    END as member_segment,
+    CASE
+        WHEN digital_engagement_score >= 80 THEN 'High Digital (80+)'
+        WHEN digital_engagement_score >= 50 THEN 'Medium Digital (50-79)'
+        ELSE 'Low Digital (<50)'
+    END as digital_segment,
+    COUNT(*) as member_count,
+    ROUND(AVG(total_balance), 2) as avg_balance,
+    ROUND(AVG(digital_engagement_score), 1) as avg_digital_score
+FROM member_profile
+GROUP BY 1, 2
+ORDER BY member_count DESC;
+```
+**Business Value:** Identify target segments for personalized marketing and product recommendations.
+
+#### **3. Cross-Sell Opportunities**
+```sql
+-- High-value checking customers without savings accounts
+SELECT 
+    member_number,
+    first_name,
+    last_name,
+    ROUND(checking_balance, 2) as checking_balance,
+    digital_engagement_score,
+    mobile_app_user,
+    email,
+    preferred_channel
+FROM member_profile
+WHERE checking_balance > 5000 
+    AND (savings_balance IS NULL OR savings_balance = 0)
+    AND digital_engagement_score > 70
+    AND mobile_app_user = 'Yes'
+    AND email IS NOT NULL
+ORDER BY checking_balance DESC
+LIMIT 20;
+```
+**Business Value:** Identify high-potential customers for savings account cross-selling campaigns.
+
+#### **4. Risk Assessment Overview**
+```sql
+-- Risk distribution and loan portfolio analysis
+SELECT 
+    risk_category,
+    COUNT(*) as member_count,
+    ROUND(AVG(total_loan_amount), 2) as avg_loan_amount,
+    ROUND(AVG(total_balance), 2) as avg_total_balance,
+    COUNT(CASE WHEN total_loans > 1 THEN 1 END) as multiple_loan_holders,
+    ROUND(AVG(interest_rate), 2) as avg_interest_rate
+FROM member_profile
+WHERE risk_category IS NOT NULL
+GROUP BY risk_category
+ORDER BY member_count DESC;
+```
+**Business Value:** Understand risk distribution and loan portfolio performance.
+
+#### **5. Digital Adoption by Member Tenure**
+```sql
+-- Digital banking adoption trends by how long members have been with CU
+SELECT 
+    CASE 
+        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 10 THEN '10+ Years'
+        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 5 THEN '5-10 Years'
+        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 2 THEN '2-5 Years'
+        ELSE 'New Member (<2 Years)'
+    END as member_tenure,
+    COUNT(*) as total_members,
+    COUNT(CASE WHEN mobile_app_user = 'Yes' THEN 1 END) as mobile_users,
+    COUNT(CASE WHEN online_banking_user = 'Yes' THEN 1 END) as online_users,
+    COUNT(CASE WHEN bill_pay_enrolled = 'Yes' THEN 1 END) as bill_pay_users,
+    ROUND(AVG(digital_engagement_score), 1) as avg_digital_score,
+    ROUND(COUNT(CASE WHEN mobile_app_user = 'Yes' THEN 1 END) * 100.0 / COUNT(*), 1) as mobile_adoption_rate
+FROM member_profile
+WHERE member_since IS NOT NULL
+GROUP BY 1
+ORDER BY total_members DESC;
+```
+**Business Value:** Understand digital adoption patterns and identify opportunities to increase engagement.
+
+#### **6. Marketing Campaign Targeting**
+```sql
+-- High-engagement members for premium product marketing
+SELECT 
+    member_number,
+    first_name,
+    last_name,
+    ROUND(total_balance, 2) as total_balance,
+    digital_engagement_score,
+    preferred_channel,
+    marketing_consent,
+    email,
+    last_contact_date,
+    product_count
+FROM member_profile
+WHERE total_balance > 25000
+    AND digital_engagement_score > 75
+    AND marketing_consent = true
+    AND preferred_channel IS NOT NULL
+    AND email IS NOT NULL
+ORDER BY total_balance DESC, digital_engagement_score DESC
+LIMIT 50;
+```
+**Business Value:** Identify high-value, engaged members for premium product marketing campaigns.
+
+#### **7. Data Versioning and Freshness**
+```sql
+-- Check data freshness and multiple runs
+SELECT 
+    runid,
+    COUNT(*) as record_count,
+    MIN(created_date) as earliest_record,
+    MAX(created_date) as latest_record,
+    COUNT(DISTINCT golden_member_id) as unique_members
+FROM member_profile
+GROUP BY runid
+ORDER BY runid DESC;
+```
+**Business Value:** Track data pipeline runs and ensure data freshness for reporting.
+
+### **💡 Query Tips**
+
+**Cost Optimization:**
+- Athena charges ~$5 per TB scanned
+- Sample data is small (~2MB), so queries cost <$0.01 each
+- Use `LIMIT` clauses for testing
+
+**Performance Tips:**
+- Queries run faster on partitioned data (year/month/day/hour)
+- Use specific columns instead of `SELECT *`
+- Filter early in WHERE clauses
+
+**Next Steps:**
+- **Export Results:** Download query results as CSV
+- **Create Views:** Save frequently used queries as Athena views
+- **Build Dashboards:** Use query results in QuickSight, Tableau, or other BI tools
+- **Schedule Reports:** Use AWS Lambda to run queries automatically
+
+### **🔗 Advanced Analytics**
+
+Once you're comfortable with these queries, consider:
+- **Amazon QuickSight** for interactive dashboards (~$18/month per user)
+- **AWS Lambda** for automated reporting
+- **Amazon SES** for email reports
+- **Custom applications** using the Athena API
 
 ✅ **All 4 stacks deploy successfully**  
 ✅ **RDS contains ~2,000 member records with SSN transformations**  
