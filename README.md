@@ -261,6 +261,22 @@ cdk destroy CreditUnionDataStack --region us-west-2
 cdk destroy CreditUnionInfrastructureStack --region us-west-2
 ```
 
+### **⚠️ Additional Cleanup Steps**
+
+**If you used Amazon Athena:**
+```bash
+# Delete Athena query results bucket (CDK doesn't manage this)
+aws s3 rm s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2/ --recursive --region us-west-2
+aws s3 rb s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2/ --region us-west-2
+```
+
+**If you want to keep the data but remove compute resources:**
+```bash
+# Keep S3 data, remove only compute resources
+cdk destroy CreditUnionTriggerStack CreditUnionETLStack CreditUnionDataStack --region us-west-2
+# This preserves: S3 buckets with data, but removes: RDS, Glue jobs, Lambda functions
+```
+
 ## 📊 **Data Schema**
 
 **Final Output: `member_profile` table (51 columns)**
@@ -304,19 +320,31 @@ After deployment, you can immediately analyze your Member 360 data using Amazon 
 
 ### **🔧 Athena Setup (One-Time)**
 
-1. **Open Amazon Athena Console**
+1. **Create S3 Bucket for Query Results**
+   ```bash
+   # Create bucket for Athena query results (run in CloudShell)
+   aws s3 mb s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2 --region us-west-2
+   ```
+
+2. **Open Amazon Athena Console**
    - Go to AWS Console → Search "Athena" → Click "Amazon Athena"
 
-2. **Set Query Result Location**
+3. **Launch Query Editor (First-Time Users)**
+   - If this is your first time using Athena, you'll see engine options
+   - Click **"Launch query editor"** under **"Trino SQL"**
+   - (This is the standard SQL engine for data analysis)
+
+4. **Set Query Result Location**
    - Click "Settings" tab → "Manage"
    - Set location: `s3://aws-athena-query-results-YOUR_ACCOUNT_ID-us-west-2/`
+   - (Replace YOUR_ACCOUNT_ID with your actual AWS account ID)
    - Click "Save"
 
-3. **Select Database**
+5. **Select Database**
    - In "Database" dropdown, select: **`creditunion_consume`**
    - You should see the `member_profile` table appear
 
-4. **Verify Data**
+6. **Verify Data**
    ```sql
    -- Quick test query
    SELECT COUNT(*) as total_members 
@@ -365,28 +393,27 @@ ORDER BY member_count DESC;
 ```
 **Business Value:** Identify target segments for personalized marketing and product recommendations.
 
-#### **3. Cross-Sell Opportunities**
+#### **3. Premium Product Marketing Opportunities**
 ```sql
--- High-value checking customers without savings accounts
+-- High-balance members for premium product marketing
 SELECT 
     member_number,
     first_name,
     last_name,
+    ROUND(total_balance, 2) as total_balance,
     ROUND(checking_balance, 2) as checking_balance,
-    digital_engagement_score,
-    mobile_app_user,
+    ROUND(savings_balance, 2) as savings_balance,
     email,
-    preferred_channel
+    phone,
+    state
 FROM member_profile
-WHERE checking_balance > 5000 
-    AND (savings_balance IS NULL OR savings_balance = 0)
-    AND digital_engagement_score > 70
-    AND mobile_app_user = 'Yes'
+WHERE total_balance > 30000 
     AND email IS NOT NULL
-ORDER BY checking_balance DESC
+    AND email != ''
+ORDER BY total_balance DESC
 LIMIT 20;
 ```
-**Business Value:** Identify high-potential customers for savings account cross-selling campaigns.
+**Business Value:** Identify high-net-worth members for premium banking products, investment services, or private banking offerings.
 
 #### **4. Risk Assessment Overview**
 ```sql
@@ -416,11 +443,10 @@ SELECT
         ELSE 'New Member (<2 Years)'
     END as member_tenure,
     COUNT(*) as total_members,
-    COUNT(CASE WHEN mobile_app_user = 'Yes' THEN 1 END) as mobile_users,
-    COUNT(CASE WHEN online_banking_user = 'Yes' THEN 1 END) as online_users,
-    COUNT(CASE WHEN bill_pay_enrolled = 'Yes' THEN 1 END) as bill_pay_users,
-    ROUND(AVG(digital_engagement_score), 1) as avg_digital_score,
-    ROUND(COUNT(CASE WHEN mobile_app_user = 'Yes' THEN 1 END) * 100.0 / COUNT(*), 1) as mobile_adoption_rate
+    COUNT(CASE WHEN mobile_app_user = 'true' THEN 1 END) as mobile_users,
+    COUNT(CASE WHEN online_banking_user = 'true' THEN 1 END) as online_users,
+    COUNT(CASE WHEN bill_pay_enrolled = 'true' THEN 1 END) as bill_pay_users,
+    ROUND(COUNT(CASE WHEN mobile_app_user = 'true' THEN 1 END) * 100.0 / COUNT(*), 1) as mobile_adoption_rate
 FROM member_profile
 WHERE member_since IS NOT NULL
 GROUP BY 1
@@ -436,7 +462,8 @@ SELECT
     first_name,
     last_name,
     ROUND(total_balance, 2) as total_balance,
-    digital_engagement_score,
+    mobile_app_user,
+    online_banking_user,
     preferred_channel,
     marketing_consent,
     email,
@@ -444,14 +471,15 @@ SELECT
     product_count
 FROM member_profile
 WHERE total_balance > 25000
-    AND digital_engagement_score > 75
+    AND mobile_app_user = 'true'
+    AND online_banking_user = 'true'
     AND marketing_consent = true
-    AND preferred_channel IS NOT NULL
     AND email IS NOT NULL
-ORDER BY total_balance DESC, digital_engagement_score DESC
+    AND email != ''
+ORDER BY total_balance DESC
 LIMIT 50;
 ```
-**Business Value:** Identify high-value, engaged members for premium product marketing campaigns.
+**Business Value:** Identify high-value, digitally engaged members for premium product marketing campaigns.
 
 #### **7. Data Versioning and Freshness**
 ```sql
