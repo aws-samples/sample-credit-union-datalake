@@ -3,7 +3,7 @@
 **Status**: Production Ready with Enterprise Security  
 **Last Updated**: September 1, 2025  
 **Version**: 2.0 - Fully Automated with Security Enhancements  
-**Repository**: https://gitlab.aws.dev/hofsbeno/cu-datalake
+**Repository**: https://gitlab.aws.dev/hofsbeno/sample-cu-datalake
 
 ## 🎯 **What This CDK Deploys**
 
@@ -37,10 +37,10 @@ This is a **complete, enterprise-grade** Credit Union Data Lake with full automa
 ### **Step 2: Deploy CUDL (4 Commands)**
 ```bash
 # Clone the repository
-git clone https://gitlab.aws.dev/hofsbeno/cu-datalake.git
+git clone https://gitlab.aws.dev/hofsbeno/sample-cu-datalake.git
 
 # Navigate and install dependencies
-cd cu-datalake
+cd sample-cu-datalake
 npm install
 
 # Build the project
@@ -73,8 +73,8 @@ If you prefer local development:
 ### **Local Deployment**
 ```bash
 # Clone and setup
-git clone https://gitlab.aws.dev/hofsbeno/cu-datalake.git
-cd cu-datalake
+git clone https://gitlab.aws.dev/hofsbeno/sample-cu-datalake.git
+cd sample-cu-datalake
 npm install
 npm run build
 
@@ -181,7 +181,7 @@ aws stepfunctions list-executions --state-machine-arn $(aws stepfunctions list-s
 ## 📁 **Project Structure**
 
 ```
-cu-datalake/
+sample-cu-datalake/
 ├── lib/
 │   ├── creditunion-infrastructure-stack.ts  # VPC, RDS, S3, KMS, IAM
 │   ├── creditunion-data-stack.ts           # Glue Catalog, Crawlers, Connections
@@ -550,7 +550,7 @@ Once you're comfortable with these queries, consider:
 
 ## 📞 **Support**
 
-- **Repository**: https://gitlab.aws.dev/hofsbeno/cu-datalake
+- **Repository**: https://gitlab.aws.dev/hofsbeno/sample-cu-datalake
 - **Issues**: Use GitLab Issues for bug reports and feature requests
 - **Documentation**: This README covers all deployment and usage scenarios
 
