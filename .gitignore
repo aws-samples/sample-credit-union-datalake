@@ -32,3 +32,6 @@ coverage/
 
 # AWS
 .aws/
+
+# Blog
+blog/
