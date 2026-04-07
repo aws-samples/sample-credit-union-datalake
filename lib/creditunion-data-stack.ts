@@ -20,6 +20,7 @@ interface CreditUnionDataStackProps extends cdk.StackProps {
   databaseSecret: secretsmanager.Secret;
   databaseSecurityGroup: ec2.SecurityGroup;
   vpc: ec2.Vpc;
+  secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
 }
 
 export class CreditUnionDataStack extends cdk.Stack {
@@ -38,7 +39,8 @@ export class CreditUnionDataStack extends cdk.Stack {
       vpc: props.vpc,
       database: props.database,
       databaseSecret: props.databaseSecret,
-      collectBucket: props.collectBucket
+      collectBucket: props.collectBucket,
+      secretsManagerEndpoint: props.secretsManagerEndpoint
     });
 
     // Glue Databases
@@ -336,7 +338,7 @@ export class CreditUnionDataStack extends cdk.Stack {
 
     // Lambda function to trigger crawlers
     this.crawlerTriggerFunction = new lambda.Function(this, 'CrawlerTriggerFunction', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
       code: lambda.Code.fromInline(`
 import boto3

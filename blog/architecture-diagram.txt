@@ -1,0 +1,118 @@
+CREDIT UNION DATA LAKE (CUDL) — ARCHITECTURE DIAGRAM
+=====================================================
+
+This is a text-based reference of the architecture for use in the blog post.
+A Mermaid diagram (architecture-diagram.mmd) is also provided for rendering.
+
+To render the Mermaid diagram:
+  - Paste the .mmd file contents into https://mermaid.live
+  - Or use the Mermaid CLI: mmdc -i architecture-diagram.mmd -o architecture-diagram.png -w 2400
+
+For the blog, we recommend exporting as PNG or SVG at 2400px wide.
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DATA SOURCES                                      │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
+│  │  Amazon RDS       │  │  CSV Files       │  │  XML Files       │          │
+│  │  MySQL            │  │  Digital Banking │  │  CRM System      │          │
+│  │  (Core Banking    │  │  Loan System     │  │  Credit Cards    │          │
+│  │   2,000 members)  │  │                  │  │                  │          │
+│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘          │
+└───────────┼──────────────────────┼──────────────────────┼───────────────────┘
+            │                      │                      │
+            ▼                      ▼                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COLLECT ZONE (Amazon S3 — KMS Encrypted)                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  s3://creditunion-{account}-{region}-collect/CreditUnionData/      │    │
+│  │    ├── CoreBanking_RDS_LoadOnly/   (CSV → loaded into RDS)         │    │
+│  │    ├── CreditCards/                (XML)                           │    │
+│  │    ├── CRMSystem/                  (XML)                           │    │
+│  │    ├── DigitalBanking/             (CSV)                           │    │
+│  │    └── LoanSystem/                 (CSV)                           │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+        ┌─────────────────────────┼─────────────────────────┐
+        │                         │                         │
+        ▼                         ▼                         ▼
+┌───────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+│ Glue Crawlers │  │  AWS Glue Data       │  │  AWS Step Functions  │
+│ (XML Schema   │  │  Catalog             │  │  (Orchestration)     │
+│  Discovery)   │──│  3 Databases:        │  │                      │
+│               │  │  • cleanse           │  │  ┌────────────────┐  │
+└───────────────┘  │  • consume           │  │  │ Parallel Phase │  │
+                   │  • xml_catalog       │  │  │                │  │
+                   └──────────────────────┘  │  │  ┌──────────┐  │  │
+                                             │  │  │MySQL ETL │  │  │
+                                             │  │  │(RDS→Pqt) │  │  │
+                                             │  │  ├──────────┤  │  │
+                                             │  │  │XML ETL   │  │  │
+                                             │  │  │(XML→Pqt) │  │  │
+                                             │  │  ├──────────┤  │  │
+                                             │  │  │CSV ETL   │  │  │
+                                             │  │  │(CSV→Pqt) │  │  │
+                                             │  │  └──────────┘  │  │
+                                             │  └───────┬────────┘  │
+                                             │          │           │
+                                             │          ▼           │
+                                             │  ┌────────────────┐  │
+                                             │  │ Member 360 ETL │  │
+                                             │  │ (Entity Res.   │  │
+                                             │  │  + Join)       │  │
+                                             │  └────────────────┘  │
+                                             └──────────┬───────────┘
+                                                        │
+                                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CLEANSE ZONE (Amazon S3 — Snappy Parquet, Partitioned by date)             │
+│  s3://creditunion-{account}-{region}-cleanse/CreditUnionData/               │
+│    ├── core_banking_members/  (from MySQL)                                  │
+│    ├── CreditCards/           (from XML, flattened)                          │
+│    ├── CRM/                   (from XML, flattened)                          │
+│    ├── DigitalBanking/        (from CSV)                                    │
+│    └── LoanSystem/            (from CSV)                                    │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CONSUME ZONE (Amazon S3 — Analytics-Ready)                                 │
+│  s3://creditunion-{account}-{region}-consume/CreditUnionData/               │
+│    └── member_profile/   (51 columns, ~2,000 unified member profiles)       │
+│         Partitioned: year/month/day/hour                                    │
+│         Includes: RunID for data versioning                                 │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+          ┌──────────────────┐        ┌──────────────────┐
+          │  Amazon Athena   │        │ Amazon QuickSight │
+          │  (SQL Analytics) │        │ (BI Dashboards)   │
+          └──────────────────┘        └──────────────────┘
+
+
+SECURITY OVERLAY
+================
+  🔑 AWS KMS — Customer-managed key encrypts all S3 buckets + RDS storage
+  🔐 AWS Secrets Manager — Stores and rotates RDS credentials
+  🔒 Amazon VPC — Private subnets for RDS, VPC Endpoints for S3 & Secrets Manager
+  👤 AWS IAM — Least-privilege roles per service (Glue, Lambda, Step Functions)
+  🛡️ Security Groups — Restrict MySQL (3306) access to Glue + Lambda only
+
+
+AUTOMATION FLOW (CDK Stack 4 — Trigger Stack)
+==============================================
+  1. CloudFormation Custom Resource triggers Lambda: RDS Data Loader
+  2. In parallel, triggers Lambda: Crawler Trigger (starts XML crawlers)
+  3. Lambda: Crawler Wait polls until crawlers complete (smart polling, 30s intervals)
+  4. Custom Resource starts Step Functions execution
+  5. Step Functions runs 3 ETL jobs in parallel, then Member 360 sequentially
+  6. Pipeline completes end-to-end in ~10-15 minutes after infrastructure deploys
+
+
+CDK STACK DEPENDENCY CHAIN
+===========================
+  Stack 1: Infrastructure  →  Stack 2: Data Catalog  →  Stack 3: ETL  →  Stack 4: Trigger
+  (VPC, RDS, S3, KMS, IAM)    (Glue DBs, Crawlers)     (Jobs, StepFn)   (Automation)

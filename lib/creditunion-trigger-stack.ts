@@ -121,7 +121,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
 
   private createCrawlerWaitFunction(): lambda.Function {
     const waitFunction = new lambda.Function(this, 'CrawlerWaitFunction', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
       code: lambda.Code.fromInline(`
 import boto3

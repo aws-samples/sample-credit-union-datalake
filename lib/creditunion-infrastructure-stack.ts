@@ -21,6 +21,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   public readonly databaseSecret: secretsmanager.Secret;
   public readonly databaseSecurityGroup: ec2.SecurityGroup;
   public readonly vpc: ec2.Vpc;
+  public readonly secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -56,7 +57,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     // VPC Endpoint for Secrets Manager
-    const secretsManagerEndpoint = this.vpc.addInterfaceEndpoint('SecretsManagerVPCEndpoint', {
+    this.secretsManagerEndpoint = this.vpc.addInterfaceEndpoint('SecretsManagerVPCEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
       privateDnsEnabled: true,
       subnets: {
@@ -226,7 +227,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     );
 
     // Allow Lambda to access Secrets Manager VPC endpoint
-    secretsManagerEndpoint.connections.allowDefaultPortFrom(
+    this.secretsManagerEndpoint.connections.allowDefaultPortFrom(
       this.databaseSecurityGroup,
       'Allow Lambda to access Secrets Manager VPC endpoint'
     );
@@ -246,7 +247,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     // RDS MySQL Instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
-        version: rds.MysqlEngineVersion.VER_8_0_39
+        version: rds.MysqlEngineVersion.VER_8_0_40
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       credentials: rds.Credentials.fromSecret(this.databaseSecret),

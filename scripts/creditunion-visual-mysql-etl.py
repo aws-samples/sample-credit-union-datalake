@@ -43,6 +43,13 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
+# Resolve bucket names dynamically (no hardcoded account IDs)
+import boto3
+sts = boto3.client('sts')
+ACCOUNT_ID = sts.get_caller_identity()['Account']
+REGION = boto3.session.Session().region_name
+CLEANSE_BUCKET = f"creditunion-{ACCOUNT_ID}-{REGION}-cleanse"
+
 # Default ruleset used by all target nodes with data quality enabled
 DEFAULT_DATA_QUALITY_RULESET = """
     Rules = [
@@ -69,7 +76,7 @@ SelectFromCollection_node1754777394760 = SelectFromCollection.apply(dfc=CustomTr
 
 # Script generated for node CoreBanking_Destination
 EvaluateDataQuality().process_rows(frame=SelectFromCollection_node1754777394760, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754713359158", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-CoreBanking_Destination_node1754716355517 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-cleanse/CreditUnionData/core_banking_members/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CoreBanking_Destination_node1754716355517")
+CoreBanking_Destination_node1754716355517 = glueContext.getSink(path=f"s3://{CLEANSE_BUCKET}/CreditUnionData/core_banking_members/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CoreBanking_Destination_node1754716355517")
 CoreBanking_Destination_node1754716355517.setCatalogInfo(catalogDatabase="creditunion_cleanse",catalogTableName="core_banking_members")
 CoreBanking_Destination_node1754716355517.setFormat("glueparquet", compression="snappy")
 CoreBanking_Destination_node1754716355517.writeFrame(SelectFromCollection_node1754777394760)

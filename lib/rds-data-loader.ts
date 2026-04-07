@@ -5,13 +5,15 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cr from 'aws-cdk-lib/custom-resources';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 export interface RdsDataLoaderProps {
   vpc: ec2.Vpc;
   database: rds.DatabaseInstance;
-  databaseSecret: rds.DatabaseSecret;
+  databaseSecret: secretsmanager.Secret;
   collectBucket: s3.Bucket;
+  secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
 }
 
 export class RdsDataLoader extends Construct {
@@ -23,7 +25,7 @@ export class RdsDataLoader extends Construct {
     // Create pymysql Lambda layer
     const pymysqlLayer = new lambda.LayerVersion(this, 'PymysqlLayer', {
       code: lambda.Code.fromAsset('layers/pymysql'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_13],
       description: 'PyMySQL library for Lambda'
     });
 
@@ -61,7 +63,7 @@ export class RdsDataLoader extends Construct {
 
     // Lambda function
     this.lambda = new lambda.Function(this, 'RdsDataLoaderFunction', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.lambda_handler',
       role: lambdaRole,
       vpc: props.vpc,
@@ -131,6 +133,9 @@ def lambda_handler(event, context):
         raise Exception(f'RDS data loading failed: {str(e)}')
       `)
     });
+
+    // Ensure Lambda waits for Secrets Manager VPC endpoint to be ready
+    this.lambda.node.addDependency(props.secretsManagerEndpoint);
 
     // Note: Lambda can be manually triggered after deployment
     // aws lambda invoke --function-name [function-name] --region us-west-2 /tmp/response.json

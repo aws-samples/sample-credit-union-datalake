@@ -32,7 +32,8 @@ const dataStack = new CreditUnionDataStack(app, 'CreditUnionDataStack', {
   database: infrastructureStack.database,
   databaseSecret: infrastructureStack.databaseSecret,
   databaseSecurityGroup: infrastructureStack.databaseSecurityGroup,
-  vpc: infrastructureStack.vpc
+  vpc: infrastructureStack.vpc,
+  secretsManagerEndpoint: infrastructureStack.secretsManagerEndpoint
 });
 
 // ETL Stack (Glue Jobs, Step Functions)
@@ -72,5 +73,4 @@ triggerStack.addDependency(etlStack);
 // Add tags to all resources
 cdk.Tags.of(app).add('Project', 'CreditUnionAnalytics');
 cdk.Tags.of(app).add('Environment', 'Development');
-cdk.Tags.of(app).add('Owner', 'DataEngineering');
-cdk.Tags.of(app).add('CostCenter', 'Analytics');
+cdk.Tags.of(app).add('Owner', 'CreditUnionAnalytics');
