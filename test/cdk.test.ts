@@ -58,7 +58,7 @@ describe('Infrastructure Stack', () => {
   });
 
   test('creates 3 S3 buckets with encryption', () => {
-    template.resourceCountIs('AWS::S3::Bucket', 3);
+    template.resourceCountIs('AWS::S3::Bucket', 4);
   });
 
   test('creates KMS key with rotation', () => {

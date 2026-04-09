@@ -28,8 +28,9 @@ export class CreditUnionETLStack extends cdk.Stack {
     // Create Glue assets bucket for ETL scripts
     const glueAssetsBucket = new s3.Bucket(this, 'GlueAssetsBucket', {
       bucketName: `aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      encryption: s3.BucketEncryption.KMS,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true
     });

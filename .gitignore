@@ -35,3 +35,9 @@ coverage/
 
 # Blog
 blog/
+
+# Tests (local only)
+test/
+
+# Threat model artifacts
+.threatmodel/

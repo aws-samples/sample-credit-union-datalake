@@ -77,7 +77,7 @@ export class CreditUnionDataStack extends cdk.Stack {
         connectionType: 'JDBC',
         connectionProperties: {
           JDBC_CONNECTION_URL: `jdbc:mysql://${props.database.instanceEndpoint.hostname}:3306/creditunion`,
-          USERNAME: 'admin',
+          USERNAME: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:username}}`,
           PASSWORD: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:password}}`
         },
         physicalConnectionRequirements: {

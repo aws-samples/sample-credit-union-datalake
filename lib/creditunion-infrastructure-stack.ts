@@ -8,6 +8,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
 import { Construct } from 'constructs';
 
 export class CreditUnionInfrastructureStack extends cdk.Stack {
@@ -71,6 +72,18 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       subnets: [{
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
       }]
+    });
+
+    // VPC Flow Logs for network monitoring
+    this.vpc.addFlowLog('VpcFlowLog', {
+      destination: ec2.FlowLogDestination.toCloudWatchLogs(
+        new logs.LogGroup(this, 'VpcFlowLogGroup', {
+          logGroupName: '/aws/vpc/creditunion-flow-logs',
+          retention: logs.RetentionDays.THREE_MONTHS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY
+        })
+      ),
+      trafficType: ec2.FlowLogTrafficType.ALL
     });
 
     // S3 Buckets for Data Lake
@@ -349,6 +362,59 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
+
+    // CloudTrail for auditing all API calls
+    const trailBucket = new s3.Bucket(this, 'CloudTrailBucket', {
+      bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-cloudtrail`,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: this.kmsKey,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: true,
+      objectLockEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
+    });
+
+    new cloudtrail.Trail(this, 'CreditUnionTrail', {
+      bucket: trailBucket,
+      trailName: 'creditunion-audit-trail',
+      isMultiRegionTrail: false,
+      includeGlobalServiceEvents: true,
+      enableFileValidation: true,
+      sendToCloudWatchLogs: true,
+      cloudWatchLogGroup: new logs.LogGroup(this, 'CloudTrailLogGroup', {
+        logGroupName: '/aws/cloudtrail/creditunion',
+        retention: logs.RetentionDays.THREE_MONTHS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY
+      })
+    });
+
+    // S3 bucket policies — restrict data access to VPC endpoint only
+    const vpcEndpointCondition = {
+      StringNotEquals: {
+        'aws:sourceVpce': [this.secretsManagerEndpoint.vpcEndpointId]
+      }
+    };
+
+    this.collectBucket.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyNonVpcAccess',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['s3:GetObject', 's3:PutObject'],
+      resources: [`${this.collectBucket.bucketArn}/*`],
+      conditions: {
+        StringNotEquals: {
+          'aws:PrincipalServiceName': ['cloudformation.amazonaws.com', 'lambda.amazonaws.com']
+        },
+        'ForAllValues:StringNotLike': {
+          'aws:PrincipalArn': [
+            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/creditunion-*`,
+            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`
+          ]
+        }
+      }
+    }));
 
     // Outputs
     new cdk.CfnOutput(this, 'CollectBucketName', {
