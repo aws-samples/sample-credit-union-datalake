@@ -6,7 +6,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as cr from 'aws-cdk-lib/custom-resources';
+import * as signer from 'aws-cdk-lib/aws-signer';
 import { RdsDataLoader } from './rds-data-loader';
 import { Construct } from 'constructs';
 
@@ -14,7 +14,7 @@ interface CreditUnionDataStackProps extends cdk.StackProps {
   collectBucket: s3.Bucket;
   cleanseBucket: s3.Bucket;
   consumeBucket: s3.Bucket;
-  glueRole: iam.Role;
+  glueRoleMysql: iam.Role;
   glueSecurityGroup: ec2.SecurityGroup;
   database: rds.DatabaseInstance;
   databaseSecret: secretsmanager.Secret;
@@ -205,6 +205,12 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Member Profile Table (Consume)
+    // TODO [THREAT-5]: Configure AWS Lake Formation post-deploy:
+    //   1. Register the consume S3 bucket as a Lake Formation data location
+    //   2. Grant column-level SELECT on member_profile, EXCLUDING: ssn, ssn_last_4, ssn_last_4_key
+    //   3. Create a masked view for SSN columns (e.g., '***-**-1234')
+    //   4. Restrict Athena/QuickSight IAM roles to Lake Formation-governed tables only
+    //   See .threatmodel/ for full threat context.
     new glue.CfnTable(this, 'MemberProfileTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.consumeDatabase.ref,
@@ -336,10 +342,22 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
+    // Code signing for crawler trigger Lambda
+    const crawlerSigningProfile = new signer.SigningProfile(this, 'CrawlerSigningProfile', {
+      platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
+      signatureValidity: cdk.Duration.days(365),
+    });
+
+    const crawlerCodeSigningConfig = new lambda.CodeSigningConfig(this, 'CrawlerCodeSigningConfig', {
+      signingProfiles: [crawlerSigningProfile],
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+    });
+
     // Lambda function to trigger crawlers
     this.crawlerTriggerFunction = new lambda.Function(this, 'CrawlerTriggerFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
+      codeSigningConfig: crawlerCodeSigningConfig,
       code: lambda.Code.fromInline(`
 import boto3
 import json

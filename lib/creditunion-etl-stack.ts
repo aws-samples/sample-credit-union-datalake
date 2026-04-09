@@ -12,7 +12,10 @@ interface CreditUnionETLStackProps extends cdk.StackProps {
   collectBucket: s3.Bucket;
   cleanseBucket: s3.Bucket;
   consumeBucket: s3.Bucket;
-  glueRole: iam.Role;
+  glueRoleMysql: iam.Role;
+  glueRoleXml: iam.Role;
+  glueRoleCsv: iam.Role;
+  glueRoleMember360: iam.Role;
   glueConnection: glue.CfnConnection;
   cleanseDatabase: glue.CfnDatabase;
   consumeDatabase: glue.CfnDatabase;
@@ -27,17 +30,41 @@ export class CreditUnionETLStack extends cdk.Stack {
 
     // Create Glue assets bucket for ETL scripts
     const glueAssetsBucket = new s3.Bucket(this, 'GlueAssetsBucket', {
-      bucketName: `aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`,
+      bucketName: `creditunion-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`,
       encryption: s3.BucketEncryption.KMS,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      versioned: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true
     });
 
+    // Restrict glue-assets bucket writes to CDK deployment roles only
+    glueAssetsBucket.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyUnauthorizedScriptWrites',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['s3:PutObject', 's3:DeleteObject'],
+      resources: [`${glueAssetsBucket.bucketArn}/*`],
+      conditions: {
+        'ArnNotLike': {
+          'aws:PrincipalArn': [
+            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`,
+            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/CreditUnion*`,
+          ]
+        },
+        'StringNotEquals': {
+          'aws:PrincipalServiceName': ['cloudformation.amazonaws.com']
+        }
+      }
+    }));
+
     // Visual ETL Jobs
     const visualETL = new VisualETLJobs(this, 'VisualETL', {
-      roleArn: props.glueRole.roleArn,
+      mysqlRoleArn: props.glueRoleMysql.roleArn,
+      xmlRoleArn: props.glueRoleXml.roleArn,
+      csvRoleArn: props.glueRoleCsv.roleArn,
+      member360RoleArn: props.glueRoleMember360.roleArn,
       connectionName: props.glueConnection.ref,
       bucketName: props.cleanseBucket.bucketName
     });

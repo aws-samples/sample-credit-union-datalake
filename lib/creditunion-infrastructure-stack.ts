@@ -16,7 +16,10 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   public readonly cleanseBucket: s3.Bucket;
   public readonly consumeBucket: s3.Bucket;
   public readonly kmsKey: kms.Key;
-  public readonly glueRole: iam.Role;
+  public readonly glueRoleMysql: iam.Role;
+  public readonly glueRoleXml: iam.Role;
+  public readonly glueRoleCsv: iam.Role;
+  public readonly glueRoleMember360: iam.Role;
   public readonly glueSecurityGroup: ec2.SecurityGroup;
   public readonly database: rds.DatabaseInstance;
   public readonly databaseSecret: secretsmanager.Secret;
@@ -75,6 +78,11 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     // VPC Flow Logs for network monitoring
+    // TODO [THREAT-4]: Deploy AWS Config rules for security group change detection:
+    //   - ec2-security-group-attached-to-eni-periodic
+    //   - vpc-sg-open-only-to-authorized-ports
+    //   - vpc-flow-logs-enabled
+    //   These require account-level AWS Config setup (see .threatmodel/ for details).
     this.vpc.addFlowLog('VpcFlowLog', {
       destination: ec2.FlowLogDestination.toCloudWatchLogs(
         new logs.LogGroup(this, 'VpcFlowLogGroup', {
@@ -275,85 +283,88 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
-    // IAM Role for Glue Jobs
-    this.glueRole = new iam.Role(this, 'CreditUnionGlueRole', {
-      roleName: `creditunion-${cdk.Aws.REGION}-glue-role`,
-      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')
-      ],
-      inlinePolicies: {
-        S3Access: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                's3:GetObject',
-                's3:PutObject',
-                's3:DeleteObject',
-                's3:ListBucket'
-              ],
-              resources: [
-                this.collectBucket.bucketArn,
-                `${this.collectBucket.bucketArn}/*`,
-                this.cleanseBucket.bucketArn,
-                `${this.cleanseBucket.bucketArn}/*`,
-                this.consumeBucket.bucketArn,
-                `${this.consumeBucket.bucketArn}/*`
-              ]
-            })
-          ]
-        }),
-        KMSAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'kms:Decrypt',
-                'kms:GenerateDataKey',
-                'kms:DescribeKey'
-              ],
-              resources: [this.kmsKey.keyArn],
-              conditions: {
-                StringEquals: {
-                  'kms:ViaService': [
-                    `s3.${cdk.Aws.REGION}.amazonaws.com`,
-                    `glue.${cdk.Aws.REGION}.amazonaws.com`
-                  ]
-                }
+    // Per-job IAM Roles for Glue — least privilege per ETL job
+    const glueBasePolicy = (buckets: s3.Bucket[]) => ({
+      S3Access: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:ListBucket'],
+            resources: buckets.flatMap(b => [b.bucketArn, `${b.bucketArn}/*`])
+          })
+        ]
+      }),
+      KMSAccess: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['kms:Decrypt', 'kms:GenerateDataKey', 'kms:DescribeKey'],
+            resources: [this.kmsKey.keyArn],
+            conditions: {
+              StringEquals: {
+                'kms:ViaService': [
+                  `s3.${cdk.Aws.REGION}.amazonaws.com`,
+                  `glue.${cdk.Aws.REGION}.amazonaws.com`
+                ]
               }
-            })
-          ]
-        }),
+            }
+          })
+        ]
+      }),
+      VPCAccess: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'ec2:CreateNetworkInterface', 'ec2:DeleteNetworkInterface',
+              'ec2:DescribeNetworkInterfaces', 'ec2:DescribeVpcs',
+              'ec2:DescribeSubnets', 'ec2:DescribeSecurityGroups'
+            ],
+            resources: ['*']
+          })
+        ]
+      })
+    });
+
+    // MySQL ETL: reads from RDS (collect), writes to cleanse
+    this.glueRoleMysql = new iam.Role(this, 'GlueRoleMysql', {
+      roleName: `creditunion-${cdk.Aws.REGION}-glue-mysql`,
+      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')],
+      inlinePolicies: {
+        ...glueBasePolicy([this.collectBucket, this.cleanseBucket]),
         SecretsManagerAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'secretsmanager:GetSecretValue',
-                'secretsmanager:DescribeSecret'
-              ],
-              resources: [this.databaseSecret.secretArn]
-            })
-          ]
-        }),
-        VPCAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'ec2:CreateNetworkInterface',
-                'ec2:DeleteNetworkInterface',
-                'ec2:DescribeNetworkInterfaces',
-                'ec2:DescribeVpcs',
-                'ec2:DescribeSubnets',
-                'ec2:DescribeSecurityGroups'
-              ],
-              resources: ['*']
-            })
-          ]
+          statements: [new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+            resources: [this.databaseSecret.secretArn]
+          })]
         })
       }
+    });
+
+    // XML ETL: reads from collect, writes to cleanse
+    this.glueRoleXml = new iam.Role(this, 'GlueRoleXml', {
+      roleName: `creditunion-${cdk.Aws.REGION}-glue-xml`,
+      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')],
+      inlinePolicies: glueBasePolicy([this.collectBucket, this.cleanseBucket])
+    });
+
+    // CSV ETL: reads from collect, writes to cleanse
+    this.glueRoleCsv = new iam.Role(this, 'GlueRoleCsv', {
+      roleName: `creditunion-${cdk.Aws.REGION}-glue-csv`,
+      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')],
+      inlinePolicies: glueBasePolicy([this.collectBucket, this.cleanseBucket])
+    });
+
+    // Member 360 ETL: reads from cleanse, writes to consume
+    this.glueRoleMember360 = new iam.Role(this, 'GlueRoleMember360', {
+      roleName: `creditunion-${cdk.Aws.REGION}-glue-member360`,
+      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')],
+      inlinePolicies: glueBasePolicy([this.cleanseBucket, this.consumeBucket])
     });
 
     // CloudWatch Log Groups
@@ -390,31 +401,32 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       })
     });
 
-    // S3 bucket policies — restrict data access to VPC endpoint only
-    const vpcEndpointCondition = {
-      StringNotEquals: {
-        'aws:sourceVpce': [this.secretsManagerEndpoint.vpcEndpointId]
-      }
-    };
-
-    this.collectBucket.addToResourcePolicy(new iam.PolicyStatement({
-      sid: 'DenyNonVpcAccess',
-      effect: iam.Effect.DENY,
-      principals: [new iam.AnyPrincipal()],
-      actions: ['s3:GetObject', 's3:PutObject'],
-      resources: [`${this.collectBucket.bucketArn}/*`],
-      conditions: {
-        StringNotEquals: {
-          'aws:PrincipalServiceName': ['cloudformation.amazonaws.com', 'lambda.amazonaws.com']
-        },
-        'ForAllValues:StringNotLike': {
-          'aws:PrincipalArn': [
-            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/creditunion-*`,
-            `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`
-          ]
+    // S3 bucket policies — deny access unless from approved IAM roles
+    // This allows CDK deployment roles, Glue roles, and Lambda roles while blocking direct access
+    for (const bucket of [this.collectBucket, this.cleanseBucket, this.consumeBucket]) {
+      bucket.addToResourcePolicy(new iam.PolicyStatement({
+        sid: 'DenyUnauthorizedAccess',
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        resources: [`${bucket.bucketArn}/*`],
+        conditions: {
+          'ArnNotLike': {
+            'aws:PrincipalArn': [
+              `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/creditunion-*`,
+              `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`,
+              `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/CreditUnion*`,
+              `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/TyAdmin`,
+            ]
+          },
+          'StringNotEquals': {
+            'aws:PrincipalServiceName': [
+              'cloudformation.amazonaws.com',
+            ]
+          }
         }
-      }
-    }));
+      }));
+    }
 
     // Outputs
     new cdk.CfnOutput(this, 'CollectBucketName', {
@@ -443,8 +455,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'GlueRoleArn', {
-      value: this.glueRole.roleArn,
-      description: 'IAM role for Glue jobs'
+      value: this.glueRoleMysql.roleArn,
+      description: 'IAM role for MySQL Glue job'
     });
   }
 }

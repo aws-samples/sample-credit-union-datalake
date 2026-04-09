@@ -6,6 +6,7 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as signer from 'aws-cdk-lib/aws-signer';
 import { Construct } from 'constructs';
 
 export interface RdsDataLoaderProps {
@@ -61,11 +62,23 @@ export class RdsDataLoader extends Construct {
       }
     });
 
+    // Code signing for Lambda function integrity
+    const signingProfile = new signer.SigningProfile(this, 'SigningProfile', {
+      platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
+      signatureValidity: cdk.Duration.days(365),
+    });
+
+    const codeSigningConfig = new lambda.CodeSigningConfig(this, 'CodeSigningConfig', {
+      signingProfiles: [signingProfile],
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+    });
+
     // Lambda function
     this.lambda = new lambda.Function(this, 'RdsDataLoaderFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.lambda_handler',
       role: lambdaRole,
+      codeSigningConfig,
       vpc: props.vpc,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
@@ -130,7 +143,8 @@ def lambda_handler(event, context):
         return f'Successfully loaded {count} unique records'
         
     except Exception as e:
-        raise Exception(f'RDS data loading failed: {str(e)}')
+        error_type = type(e).__name__
+        raise Exception(f'RDS data loading failed: {error_type} - check CloudWatch logs for details')
       `)
     });
 

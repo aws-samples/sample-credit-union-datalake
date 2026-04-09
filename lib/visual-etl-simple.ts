@@ -5,7 +5,10 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 
 export interface VisualETLProps {
-  roleArn: string;
+  mysqlRoleArn: string;
+  xmlRoleArn: string;
+  csvRoleArn: string;
+  member360RoleArn: string;
   connectionName: string;
   bucketName: string;
 }
@@ -32,7 +35,7 @@ export class VisualETLJobs extends Construct {
     // MySQL Visual ETL Job
     this.mysqlVisualJob = new glue.CfnJob(this, 'MySQLVisualETL', {
       name: 'creditunion-visual-mysql-etl',
-      role: props.roleArn,
+      role: props.mysqlRoleArn,
       command: {
         name: 'glueetl',
         scriptLocation: `s3://aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}/scripts/creditunion-visual-mysql-etl.py`,
@@ -58,13 +61,14 @@ export class VisualETLJobs extends Construct {
       workerType: 'G.1X',
       numberOfWorkers: 20,
       glueVersion: '4.0',
-      executionClass: 'STANDARD'
+      executionClass: 'STANDARD',
+      executionProperty: { maxConcurrentRuns: 1 }
     });
 
     // XML Visual ETL Job
     this.xmlVisualJob = new glue.CfnJob(this, 'XMLVisualETL', {
       name: 'creditunion-xml-collect-to-cleanse-visual',
-      role: props.roleArn,
+      role: props.xmlRoleArn,
       command: {
         name: 'glueetl',
         scriptLocation: `s3://aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}/scripts/creditunion-xml-collect-to-cleanse-visual.py`,
@@ -87,13 +91,14 @@ export class VisualETLJobs extends Construct {
       workerType: 'G.1X',
       numberOfWorkers: 10,
       glueVersion: '4.0',
-      executionClass: 'STANDARD'
+      executionClass: 'STANDARD',
+      executionProperty: { maxConcurrentRuns: 1 }
     });
 
     // CSV Visual ETL Job
     this.csvVisualJob = new glue.CfnJob(this, 'CSVVisualETL', {
       name: 'creditunion_CSV_collect_to_cleanse_visual',
-      role: props.roleArn,
+      role: props.csvRoleArn,
       command: {
         name: 'glueetl',
         scriptLocation: `s3://aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}/scripts/creditunion_CSV_collect_to_cleanse_visual.py`,
@@ -116,13 +121,14 @@ export class VisualETLJobs extends Construct {
       workerType: 'G.1X',
       numberOfWorkers: 10,
       glueVersion: '4.0',
-      executionClass: 'STANDARD'
+      executionClass: 'STANDARD',
+      executionProperty: { maxConcurrentRuns: 1 }
     });
 
     // Member 360 Visual ETL Job
     this.member360VisualJob = new glue.CfnJob(this, 'Member360VisualETL', {
       name: 'creditunion-member-360-visual-etl',
-      role: props.roleArn,
+      role: props.member360RoleArn,
       command: {
         name: 'glueetl',
         scriptLocation: `s3://aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}/scripts/creditunion-member-360-visual-etl.py`,
@@ -145,7 +151,8 @@ export class VisualETLJobs extends Construct {
       workerType: 'G.1X',
       numberOfWorkers: 10,
       glueVersion: '4.0',
-      executionClass: 'STANDARD'
+      executionClass: 'STANDARD',
+      executionProperty: { maxConcurrentRuns: 1 }
     });
   }
 }

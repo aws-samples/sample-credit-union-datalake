@@ -3,6 +3,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
+import * as signer from 'aws-cdk-lib/aws-signer';
 import { Construct } from 'constructs';
 
 interface CreditUnionTriggerStackProps extends cdk.StackProps {
@@ -56,12 +57,13 @@ export class CreditUnionTriggerStack extends cdk.Stack {
     });
 
     // Wait for crawlers to complete before triggering Step Function
+    const crawlerWaitFunction = this.createCrawlerWaitFunction();
     const waitForCrawlers = new cr.AwsCustomResource(this, 'WaitForCrawlers', {
       onCreate: {
         service: 'Lambda',
         action: 'invoke',
         parameters: {
-          FunctionName: this.createCrawlerWaitFunction().functionName
+          FunctionName: crawlerWaitFunction.functionName
         },
         physicalResourceId: cr.PhysicalResourceId.of('wait-for-crawlers')
       },
@@ -69,7 +71,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['lambda:InvokeFunction'],
-          resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*`]
+          resources: [crawlerWaitFunction.functionArn]
         })
       ]),
       installLatestAwsSdk: false
@@ -120,9 +122,20 @@ export class CreditUnionTriggerStack extends cdk.Stack {
   }
 
   private createCrawlerWaitFunction(): lambda.Function {
+    const waitSigningProfile = new signer.SigningProfile(this, 'WaitFnSigningProfile', {
+      platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
+      signatureValidity: cdk.Duration.days(365),
+    });
+
+    const waitCodeSigningConfig = new lambda.CodeSigningConfig(this, 'WaitFnCodeSigningConfig', {
+      signingProfiles: [waitSigningProfile],
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+    });
+
     const waitFunction = new lambda.Function(this, 'CrawlerWaitFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
+      codeSigningConfig: waitCodeSigningConfig,
       code: lambda.Code.fromInline(`
 import boto3
 import time
@@ -174,11 +187,14 @@ def handler(event, context):
       memorySize: 128
     });
 
-    // Add Glue permissions
+    // Add Glue permissions — scoped to specific crawlers
     waitFunction.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['glue:GetCrawler'],
-      resources: ['*']
+      resources: [
+        `arn:aws:glue:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:crawler/creditunion-crm-xml-crawler`,
+        `arn:aws:glue:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:crawler/creditunion-creditcards-xml-crawler`
+      ]
     }));
 
     return waitFunction;
