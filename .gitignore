@@ -41,3 +41,6 @@ test/
 
 # Threat model artifacts
 .threatmodel/
+
+# Scan output
+scan-output/
