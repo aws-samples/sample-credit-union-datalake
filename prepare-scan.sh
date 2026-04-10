@@ -2,7 +2,7 @@
 # Copies only project source files into a clean directory for code scanning
 # Usage: ./prepare-scan.sh
 
-SCAN_DIR="scan-output"
+SCAN_DIR="security/scans/scan-output"
 
 rm -rf "$SCAN_DIR"
 mkdir -p "$SCAN_DIR/bin" "$SCAN_DIR/lib" "$SCAN_DIR/scripts" "$SCAN_DIR/sample-data" "$SCAN_DIR/layers"
