@@ -3,9 +3,9 @@
 
 # Security Exceptions Register
 
-This document records approved security exceptions where AWS service requirements prevent strict least-privilege compliance. Each exception includes justification, compensating controls, and review schedule.
+This document records approved security exceptions where AWS service requirements prevent strict least-privilege compliance. Each exception includes justification, compensating controls, and review schedule. Exceptions are listed in priority order by risk level.
 
-## Exception 1: EC2 Describe Wildcard Resource
+## Exception 1 (Priority: Medium Risk): EC2 Describe Wildcard Resource
 
 | Field | Value |
 |---|---|
@@ -17,7 +17,7 @@ This document records approved security exceptions where AWS service requirement
 | **Approved by** | Project security review |
 | **Review schedule** | Quarterly — verify AWS has not added resource-level support for EC2 Describe APIs |
 
-## Exception 2: AWS Managed Policy — AWSGlueServiceRole
+## Exception 2 (Priority: Medium Risk): AWS Managed Policy — AWSGlueServiceRole
 
 | Field | Value |
 |---|---|
@@ -29,7 +29,7 @@ This document records approved security exceptions where AWS service requirement
 | **Approved by** | Project security review |
 | **Review schedule** | Quarterly — check if AWS has released a more restrictive managed policy for AWS Glue |
 
-## Exception 3: AWS Managed Policy — AWSLambdaVPCAccessExecutionRole
+## Exception 3 (Priority: Low Risk): AWS Managed Policy — AWSLambdaVPCAccessExecutionRole
 
 | Field | Value |
 |---|---|
@@ -41,7 +41,7 @@ This document records approved security exceptions where AWS service requirement
 | **Approved by** | Project security review |
 | **Review schedule** | Quarterly — verify no additional permissions have been added to the managed policy |
 
-## Exception 4: MFA Delete Not Enabled on Amazon S3 Buckets
+## Exception 4 (Priority: Medium Risk): MFA Delete Not Enabled on Amazon S3 Buckets
 
 | Field | Value |
 |---|---|

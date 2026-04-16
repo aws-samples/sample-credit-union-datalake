@@ -87,9 +87,11 @@ The following controls are implemented in the deployed infrastructure. For detai
 
 ## Residual Risks
 
-| Risk | Status | Owner |
-|---|---|---|
-| Unmasked SSN columns in consume zone | Post-deploy: configure AWS Lake Formation | Customer |
-| Security group changes not actively monitored | Post-deploy: configure AWS Config rules | Customer |
-| MFA Delete not enabled on sensitive buckets | Requires root account credentials | Customer |
-| AWS Secrets Manager rotation not configured | Post-deploy: enable automatic rotation | Customer |
+The following risks require post-deployment customer action, listed in priority order:
+
+| Priority | Risk | Action | Command |
+|---|---|---|---|
+| P0 | Unmasked SSN columns in consume zone | Configure AWS Lake Formation | `aws lakeformation grant-permissions --principal '{"DataLakePrincipalIdentifier":"<role-arn>"}' --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' --permissions SELECT` |
+| P1 | Security group changes not actively monitored | Deploy AWS Config rules | `aws configservice put-config-rule --config-rule '{"ConfigRuleName":"sg-open-only-authorized-ports","Source":{"Owner":"AWS","SourceIdentifier":"VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS"}}'` |
+| P2 | MFA Delete not enabled on sensitive buckets | Enable via root credentials | `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "<mfa-arn> <totp>"` |
+| P3 | AWS Secrets Manager rotation not configured | Enable automatic rotation | `aws secretsmanager rotate-secret --secret-id <SECRET_ARN> --rotation-rules '{"AutomaticallyAfterDays":30}'` |

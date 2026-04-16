@@ -38,6 +38,14 @@ This project has undergone multiple rounds of automated security scanning using 
 Security controls implemented in this project have been verified through:
 
 1. **Automated CDK synthesis tests** — 11 tests validate all 4 stacks synthesize correctly with expected resource counts and configurations
+   ```bash
+   npx jest --verbose
+   ```
 2. **Multiple rounds of automated security scanning** — Holmes Content Security Review baseline with iterative remediation
 3. **STRIDE threat model** — documented in [docs/threat-model.md](threat-model.md) with mitigations mapped to each threat
 4. **Code review** — all security changes reviewed for correctness before deployment
+
+To verify deployed controls, run the integration test suite:
+```bash
+./test/integration/run-integration-tests.sh
+```
