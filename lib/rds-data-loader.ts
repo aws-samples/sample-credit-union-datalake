@@ -33,6 +33,9 @@ export class RdsDataLoader extends Construct {
     });
 
     // AWS Lambda execution role
+    // Note: AWSLambdaVPCAccessExecutionRole managed policy is required for VPC-deployed
+    // Lambda functions. Contains EC2 wildcard permissions for network interface management.
+    // Compensated with VPC deployment in private subnet and AWS CloudTrail auditing.
     const lambdaRole = new iam.Role(this, 'RdsLoaderRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [

@@ -289,6 +289,8 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // AWS Glue XML crawlers for Credit Cards and CRM
+    // Note: AWSGlueServiceRole managed policy is required by AWS Glue crawlers.
+    // Compensated with inline policies scoping Amazon S3 access to collect bucket only.
     const xmlCrawlerRole = new iam.Role(this, 'XMLCrawlerRole', {
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
       managedPolicies: [

@@ -107,6 +107,9 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     // Amazon S3 buckets for data lake
+    // Note: MFA Delete is not enabled because it requires root account credentials
+    // and cannot be configured via AWS CDK. This is documented as a post-deployment
+    // customer action in README.md and docs/security-guidelines.md (Priority P2).
     this.collectBucket = new s3.Bucket(this, 'CollectBucket', {
       bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-collect`,
       encryption: s3.BucketEncryption.KMS,
@@ -362,6 +365,9 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     // MySQL ETL (AWS Glue): reads from RDS (collect), writes to cleanse
+    // Note: AWSGlueServiceRole managed policy is required by AWS Glue service and contains
+    // broad permissions. Compensated with per-job roles limiting Amazon S3 access to specific
+    // bucket ARNs and AWS KMS access via kms:ViaService conditions. Audited via AWS CloudTrail.
     this.glueRoleMysql = new iam.Role(this, 'GlueRoleMysql', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-mysql`,
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
