@@ -101,6 +101,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      versioned: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       lifecycleRules: [{ id: 'ExpireOldLogs', expiration: cdk.Duration.days(90) }]

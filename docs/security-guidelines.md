@@ -16,12 +16,30 @@ Customers should address post-deployment security actions in the following order
 
 | Priority | Action | Risk Reduction | Effort |
 |---|---|---|---|
-| P0 | Configure AWS Lake Formation column-level access controls for SSN fields | Prevents unauthorized PII access (~90% reduction in data exposure risk) | 2–4 hours |
-| P1 | Deploy AWS Config rules for security group monitoring | Detects unauthorized network changes (~70% reduction in misconfiguration risk) | 1–2 hours |
-| P2 | Configure MFA Delete on sensitive Amazon S3 buckets | Prevents accidental/malicious data deletion (~80% reduction in data loss risk) | 30 minutes (requires root) |
-| P3 | Set up Amazon CloudWatch alarms for security events | Reduces mean-time-to-detect for security incidents from days to minutes | 1–2 hours |
+| P0 | Configure AWS Lake Formation column-level access controls for SSN fields | Prevents unauthorized PII access (reduces data exposure risk) | 2–4 hours |
+| P1 | Deploy AWS Config rules for security group monitoring | Detects unauthorized network changes (reduces misconfiguration risk) | 1–2 hours |
+| P2 | Configure MFA Delete on sensitive Amazon S3 buckets | Prevents accidental/malicious data deletion (reduces data loss risk) | 30 minutes (requires root) |
+| P3 | Set up Amazon CloudWatch alarms for security events | Reduces time to detect security incidents | 1–2 hours |
 | P4 | Review and customize AWS IAM role permissions | Reduces blast radius of compromised credentials | 2–4 hours |
 | P5 | Configure AWS Secrets Manager automatic rotation | Limits credential exposure window from indefinite to rotation interval | 1 hour |
+
+### Post-deployment commands
+
+**P1 — Deploy AWS Config rules:**
+```bash
+aws configservice put-config-rule --config-rule '{"ConfigRuleName":"sg-open-only-authorized-ports","Source":{"Owner":"AWS","SourceIdentifier":"VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS"}}'
+aws configservice put-config-rule --config-rule '{"ConfigRuleName":"sg-attached-to-eni","Source":{"Owner":"AWS","SourceIdentifier":"EC2_SECURITY_GROUP_ATTACHED_TO_ENI_PERIODIC"}}'
+```
+
+**P3 — Set up Amazon CloudWatch alarms:**
+```bash
+aws cloudwatch put-metric-alarm --alarm-name creditunion-etl-failures --metric-name ExecutionsFailed --namespace AWS/States --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --evaluation-periods 1 --alarm-actions <SNS_TOPIC_ARN>
+```
+
+**P5 — Configure AWS Secrets Manager rotation:**
+```bash
+aws secretsmanager rotate-secret --secret-id <SECRET_ARN> --rotation-rules '{"AutomaticallyAfterDays":30}'
+```
 
 ## Security Improvement Metrics
 
@@ -49,7 +67,7 @@ The following metrics represent the security posture change from a baseline (no 
 | MFA Delete | ⚠️ Post-deploy | Requires root account credentials; configure via AWS CLI |
 | Object Lock | ✅ Enabled | On AWS CloudTrail audit log bucket |
 
-**Customer action**: To configure MFA Delete on sensitive buckets using `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"`.
+**We recommend that customers** To configure MFA Delete on sensitive buckets using `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"`.
 
 ## Amazon Relational Database Service (Amazon RDS) for MySQL
 
@@ -62,7 +80,7 @@ The following metrics represent the security posture change from a baseline (no 
 | Backup retention | ✅ Enabled | 7-day retention |
 | Security groups | ✅ Scoped | Inbound MySQL (3306) from AWS Glue and AWS Lambda security groups only |
 
-**Customer action**: Review backup retention period for regulatory requirements. Customers should configure automated snapshots to a separate AWS account for DR.
+**We recommend that customers** Review backup retention period for regulatory requirements. Customers should configure automated snapshots to a separate AWS account for DR.
 
 ## AWS IAM Access Review Procedures
 
@@ -84,7 +102,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | JDBC SSL | ✅ Enabled | SSL parameters in connection URL |
 | Script integrity | ✅ Enabled | AWS Glue assets bucket has versioning + write-restriction policy |
 
-**Customer action**: Review AWS Glue job scripts periodically for unauthorized modifications. Monitor AWS CloudTrail for `glue:UpdateJob` API calls.
+**We recommend that customers** Review AWS Glue job scripts periodically for unauthorized modifications. Monitor AWS CloudTrail for `glue:UpdateJob` API calls.
 
 ## AWS Lambda
 
@@ -95,7 +113,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | Least-privilege IAM | ✅ Enabled | Scoped to specific AWS Secrets Manager ARN, Amazon S3 paths, and AWS KMS key |
 | Error sanitization | ✅ Enabled | Error messages log type only, not raw exception content |
 
-**Customer action**: Rotate AWS Signer signing profiles before expiration. Monitor AWS CloudTrail for `lambda:UpdateFunctionCode` API calls.
+**We recommend that customers** Rotate AWS Signer signing profiles before expiration. Monitor AWS CloudTrail for `lambda:UpdateFunctionCode` API calls.
 
 ## AWS Step Functions
 
@@ -105,7 +123,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | Scoped IAM role | ✅ Enabled | Limited to specific AWS Glue job ARNs |
 | Amazon CloudWatch Logs | ✅ Enabled | 1-month retention |
 
-**Customer action**: Configure Amazon CloudWatch alarms for failed executions. Review execution history for anomalous patterns.
+**We recommend that customers** Configure Amazon CloudWatch alarms for failed executions. Review execution history for anomalous patterns.
 
 ## AWS CloudTrail
 
@@ -116,7 +134,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | Immutable storage | ✅ Enabled | Object Lock on audit log bucket |
 | Encryption | ✅ Enabled | AWS KMS customer-managed key |
 
-**Customer action**: Configure Amazon CloudWatch metric filters and alarms for security-relevant API calls (e.g., `DeleteTrail`, `StopLogging`, `DisableKey`).
+**We recommend that customers** Configure Amazon CloudWatch metric filters and alarms for security-relevant API calls (e.g., `DeleteTrail`, `StopLogging`, `DisableKey`).
 
 ## Amazon VPC
 
@@ -127,7 +145,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | Subnet isolation | ✅ Enabled | 3-tier: public, private with NAT, isolated for Amazon RDS |
 | Security groups | ✅ Scoped | Explicit port rules (3306, 443, TCP self-referencing for AWS Glue) |
 
-**Customer action**: Deploy AWS Config rules for security group change detection. See README.md Customer responsibilities section.
+**We recommend that customers** Deploy AWS Config rules for security group change detection. See README.md Customer responsibilities section.
 
 ## AWS KMS
 
@@ -137,7 +155,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | Via-service conditions | ✅ Enabled | Restricts key usage to Amazon S3 and AWS Glue services |
 | Audit logging | ✅ Enabled | AWS CloudTrail captures all AWS KMS API calls |
 
-**Customer action**: See [Key Management Strategy](key-management-strategy.md) for lifecycle procedures and access review schedule.
+**We recommend that customers** See [Key Management Strategy](key-management-strategy.md) for lifecycle procedures and access review schedule.
 
 ## AWS Secrets Manager
 
@@ -147,7 +165,7 @@ Customers should perform the following access reviews on a quarterly basis:
 | VPC endpoint access | ✅ Enabled | No public internet traffic for credential retrieval |
 | Scoped IAM access | ✅ Enabled | Only AWS Glue MySQL role and AWS Lambda RDS loader can read the secret |
 
-**Customer action**: Enable automatic secret rotation via AWS Secrets Manager rotation Lambda. Review secret access in AWS CloudTrail quarterly.
+**We recommend that customers** Enable automatic secret rotation via AWS Secrets Manager rotation Lambda. Review secret access in AWS CloudTrail quarterly.
 
 ## AWS Signer
 
@@ -156,4 +174,4 @@ Customers should perform the following access reviews on a quarterly basis:
 | Signing profiles | ✅ Enabled | SHA384 ECDSA platform, 365-day validity |
 | Code signing configs | ✅ Enabled | WARN policy on untrusted artifacts |
 
-**Customer action**: Customers can change `untrustedArtifactOnDeployment` from `WARN` to `ENFORCE` for production environments.
+**We recommend that customers** Customers can change `untrustedArtifactOnDeployment` from `WARN` to `ENFORCE` for production environments.
