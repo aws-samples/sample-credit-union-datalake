@@ -69,9 +69,18 @@ This document defines the data classification levels and handling procedures for
 
 ## Customer Responsibilities
 
-Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS is responsible for security *of* the cloud infrastructure, while customers are responsible for security *in* the cloud, including data classification and protection. Customers should:
+Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS is responsible for security *of* the cloud infrastructure, while customers are responsible for security *in* the cloud, including data classification and protection. Customers should complete the following actions in priority order:
 
-- Define data retention policies appropriate for regulatory requirements (GLBA, state privacy laws)
-- Configure AWS Lake Formation column-level permissions for Restricted data before granting analyst access
-- Review data classification assignments when adding new data sources
-- Implement data masking or tokenization for SSN fields in the consume zone
+**Priority 1 — Configure AWS Lake Formation column-level access controls:**
+```bash
+aws lakeformation register-resource --resource-arn <consume-bucket-arn>
+aws lakeformation grant-permissions --principal '{"DataLakePrincipalIdentifier":"<analyst-role-arn>"}' \
+  --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
+  --permissions SELECT
+```
+
+**Priority 2 — Define data retention policies** appropriate for regulatory requirements (GLBA, state privacy laws).
+
+**Priority 3 — Review data classification assignments** when adding new data sources.
+
+**Priority 4 — Implement data masking or tokenization** for SSN fields in the consume zone.

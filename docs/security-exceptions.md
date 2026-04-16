@@ -49,5 +49,5 @@ This document records approved security exceptions where AWS service requirement
 | **Reason** | MFA Delete requires root account credentials and cannot be configured via AWS CDK or AWS CloudFormation. |
 | **Compensating controls** | (1) Amazon S3 versioning enabled on all buckets. (2) Amazon S3 bucket policies deny unauthorized access. (3) Amazon S3 server access logging enabled. (4) AWS CloudTrail audits all Amazon S3 API calls. (5) AWS CloudTrail audit log bucket has Object Lock enabled for immutability. |
 | **Risk** | Medium — without MFA Delete, a compromised admin could delete bucket versions. Versioning and audit logging provide detection capability. |
-| **Customer action** | We recommend that customers enable MFA Delete using root credentials: `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"` |
+| **Customer action** | Customers should enable MFA Delete using root credentials: `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"` |
 | **Review schedule** | Check if AWS CDK adds MFA Delete support in future releases |

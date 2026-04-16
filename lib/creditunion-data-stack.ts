@@ -36,7 +36,7 @@ export class CreditUnionDataStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionDataStackProps) {
     super(scope, id, props);
 
-    // Amazon RDS data loader - runs after all networking is established
+    // Amazon Relational Database Service (Amazon RDS) data loader - runs after all networking is established
     this.rdsDataLoader = new RdsDataLoader(this, 'RdsDataLoader', {
       vpc: props.vpc,
       database: props.database,

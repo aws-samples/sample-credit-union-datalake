@@ -64,9 +64,22 @@ Only the following AWS IAM roles can use the key:
 Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
 
 - **AWS** manages the underlying key infrastructure, hardware security modules (HSMs), and key material security.
-- **Customers** are responsible for:
-  - Defining and enforcing key policies
-  - Reviewing key access grants quarterly
-  - Monitoring AWS CloudTrail for unauthorized key usage
-  - Managing key deletion and rotation schedules
-  - Configuring cross-region replication if required for DR
+- **Customers** are responsible for the following actions, listed in priority order:
+
+**Priority 1 — Review key access grants:**
+```bash
+aws kms list-grants --key-id <key-id>
+aws kms list-key-policies --key-id <key-id>
+```
+
+**Priority 2 — Monitor AWS CloudTrail for unauthorized key usage:**
+```bash
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=Decrypt --max-results 20
+```
+
+**Priority 3 — Manage key deletion and rotation schedules.** Verify rotation is active:
+```bash
+aws kms get-key-rotation-status --key-id <key-id>
+```
+
+**Priority 4 — Configure cross-region replication** if required for disaster recovery.

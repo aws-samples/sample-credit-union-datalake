@@ -1,5 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Amazon Relational Database Service (Amazon RDS) data loader construct.
+// Loads sample CSV data into Amazon RDS for MySQL via AWS Lambda.
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';

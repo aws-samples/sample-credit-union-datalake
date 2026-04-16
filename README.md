@@ -81,7 +81,7 @@ The following controls are deployed by this project. Customers should review and
 
 ### Customer responsibilities (post-deployment)
 
-We recommend that customers complete the following security actions before using this solution with production data. These controls are not automatically configured by the deployment and are the customer's ongoing responsibility:
+Customers should complete the following security actions before using this solution with production data. These controls are not automatically configured by the deployment and are the customer's ongoing responsibility:
 
 1. **[P0] Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/)** column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table. Without this, all authenticated users can query unmasked PII.
 2. **[P1] Deploy [AWS Config](https://aws.amazon.com/config/) rules** for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`). Without this, security group changes are logged but not actively monitored.
