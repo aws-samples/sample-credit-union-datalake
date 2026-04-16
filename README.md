@@ -52,7 +52,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
                                        │
                          ┌─────────────┴─────────────┐
                          │                           │
-                    Amazon Athena            Amazon Quick Suite
+                    Amazon Athena            Amazon QuickSight
 ```
 
 ## Security
