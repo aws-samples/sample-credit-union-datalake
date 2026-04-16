@@ -25,6 +25,8 @@ Customers should address post-deployment security actions in the following order
 
 ## Security Improvement Metrics
 
+The following metrics represent the security posture change from a baseline (no controls) to the deployed state. Post-deployment targets require customer action. Percentages are based on the count of resources with each control enabled relative to the total applicable resources.
+
 | Metric | Before Deployment | After Deployment | Target (Post-Deploy) |
 |---|---|---|---|
 | S3 buckets with encryption at rest | 0% | 100% | 100% |

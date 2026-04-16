@@ -1,3 +1,6 @@
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Credit Union Data Lake (CUDL)
 
 A complete, deployable Member 360 data lake for credit unions built with the [AWS CDK](https://aws.amazon.com/cdk/). Ingests data from five heterogeneous source systems, performs entity resolution, and produces a unified member profile with 51 attributes — all with a single `cdk deploy --all` command.
@@ -114,7 +117,7 @@ cdk bootstrap    # first time only
 cdk deploy --all --require-approval never
 ```
 
-Deployment takes ~25–35 minutes. The pipeline runs automatically — no manual steps after deploy.
+Deployment typically takes 25–35 minutes depending on region and account configuration. Actual times may vary. The pipeline runs automatically — no manual steps after deploy.
 
 ## Verify results
 
