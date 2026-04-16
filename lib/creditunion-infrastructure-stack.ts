@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -26,18 +28,19 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   public readonly databaseSecurityGroup: ec2.SecurityGroup;
   public readonly vpc: ec2.Vpc;
   public readonly secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
+  public readonly accessLogsBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // KMS Key for encryption
+    // AWS KMS key for encryption
     this.kmsKey = new kms.Key(this, 'CreditUnionKMSKey', {
       description: 'KMS key for Credit Union Analytics Platform',
       enableKeyRotation: true,
       alias: 'creditunion-analytics-key'
     });
 
-    // VPC for RDS and Glue
+    // Amazon VPC for Amazon RDS and AWS Glue
     this.vpc = new ec2.Vpc(this, 'CreditUnionVPC', {
       maxAzs: 2,
       natGateways: 1,
@@ -60,7 +63,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       ]
     });
 
-    // VPC Endpoint for Secrets Manager
+    // Amazon VPC endpoint for AWS Secrets Manager
     this.secretsManagerEndpoint = this.vpc.addInterfaceEndpoint('SecretsManagerVPCEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
       privateDnsEnabled: true,
@@ -69,7 +72,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // VPC Endpoint for S3
+    // Amazon VPC endpoint for Amazon S3
     this.vpc.addGatewayEndpoint('S3VPCEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
       subnets: [{
@@ -77,12 +80,10 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }]
     });
 
-    // VPC Flow Logs for network monitoring
-    // TODO [THREAT-4]: Deploy AWS Config rules for security group change detection:
-    //   - ec2-security-group-attached-to-eni-periodic
-    //   - vpc-sg-open-only-to-authorized-ports
-    //   - vpc-flow-logs-enabled
-    //   These require account-level AWS Config setup (see .threatmodel/ for details).
+    // Amazon VPC Flow Logs for network monitoring
+    // Post-deployment: Configure AWS Config rules for security group change detection
+    // (ec2-security-group-attached-to-eni-periodic, vpc-sg-open-only-to-authorized-ports).
+    // See the Customer responsibilities section in README.md for details.
     this.vpc.addFlowLog('VpcFlowLog', {
       destination: ec2.FlowLogDestination.toCloudWatchLogs(
         new logs.LogGroup(this, 'VpcFlowLogGroup', {
@@ -94,7 +95,18 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       trafficType: ec2.FlowLogTrafficType.ALL
     });
 
-    // S3 Buckets for Data Lake
+    // Amazon S3 access logging bucket
+    this.accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
+      bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-access-logs`,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      lifecycleRules: [{ id: 'ExpireOldLogs', expiration: cdk.Duration.days(90) }]
+    });
+
+    // Amazon S3 buckets for data lake
     this.collectBucket = new s3.Bucket(this, 'CollectBucket', {
       bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-collect`,
       encryption: s3.BucketEncryption.KMS,
@@ -102,6 +114,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'collect/',
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       lifecycleRules: [{
@@ -117,6 +131,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'cleanse/',
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       lifecycleRules: [{
@@ -132,6 +148,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'consume/',
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       lifecycleRules: [{
@@ -198,56 +216,56 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // Security group for RDS
+    // Security group for Amazon RDS
     this.databaseSecurityGroup = new ec2.SecurityGroup(this, 'DatabaseSecurityGroup', {
       vpc: this.vpc,
       description: 'Security group for Credit Union database',
       allowAllOutbound: false
     });
 
-    // Security group for Glue jobs
+    // Security group for AWS Glue jobs
     this.glueSecurityGroup = new ec2.SecurityGroup(this, 'GlueSecurityGroup', {
       vpc: this.vpc,
       description: 'Security group for Glue jobs',
       allowAllOutbound: true
     });
 
-    // Add self-referencing rule for Glue workers to communicate
+    // AWS Glue workers communicate on all TCP ports (required by AWS Glue)
     this.glueSecurityGroup.addIngressRule(
       this.glueSecurityGroup,
-      ec2.Port.allTraffic(),
-      'Self-referencing rule for Glue workers'
+      ec2.Port.allTcp(),
+      'Self-referencing rule for Glue worker communication'
     );
 
-    // Allow Glue to connect to RDS
+    // Allow AWS Glue to connect to Amazon RDS
     this.databaseSecurityGroup.addIngressRule(
       this.glueSecurityGroup,
       ec2.Port.tcp(3306),
       'Allow Glue jobs to connect to MySQL'
     );
 
-    // Allow Lambda (using database security group) to connect to itself for RDS access
+    // Allow AWS Lambda (using database security group) to connect to itself for RDS access
     this.databaseSecurityGroup.addIngressRule(
       this.databaseSecurityGroup,
       ec2.Port.tcp(3306),
       'Allow Lambda to connect to RDS MySQL'
     );
 
-    // Allow Lambda outbound to RDS MySQL
+    // Allow AWS Lambda outbound to RDS MySQL
     this.databaseSecurityGroup.addEgressRule(
       this.databaseSecurityGroup,
       ec2.Port.tcp(3306),
       'Allow Lambda outbound to RDS MySQL'
     );
 
-    // Allow Lambda outbound HTTPS for S3 VPC endpoint
+    // Allow AWS Lambda outbound HTTPS for S3 VPC endpoint
     this.databaseSecurityGroup.addEgressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(443),
       'Allow Lambda HTTPS outbound for S3 and Secrets Manager VPC endpoints'
     );
 
-    // Allow Lambda to access Secrets Manager VPC endpoint
+    // Allow AWS Lambda to access Secrets Manager VPC endpoint
     this.secretsManagerEndpoint.connections.allowDefaultPortFrom(
       this.databaseSecurityGroup,
       'Allow Lambda to access Secrets Manager VPC endpoint'
@@ -265,7 +283,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // RDS MySQL Instance
+    // Amazon RDS for MySQL instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
         version: rds.MysqlEngineVersion.VER_8_0_40
@@ -283,7 +301,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
-    // Per-job IAM Roles for Glue — least privilege per ETL job
+    // Per-job AWS IAM roles for AWS Glue — least privilege per ETL job
     const glueBasePolicy = (buckets: s3.Bucket[]) => ({
       S3Access: new iam.PolicyDocument({
         statements: [
@@ -320,13 +338,18 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
               'ec2:DescribeNetworkInterfaces', 'ec2:DescribeVpcs',
               'ec2:DescribeSubnets', 'ec2:DescribeSecurityGroups'
             ],
-            resources: ['*']
+            resources: ['*'],
+            conditions: {
+              StringEquals: {
+                'aws:RequestedRegion': [cdk.Aws.REGION]
+              }
+            }
           })
         ]
       })
     });
 
-    // MySQL ETL: reads from RDS (collect), writes to cleanse
+    // MySQL ETL (AWS Glue): reads from RDS (collect), writes to cleanse
     this.glueRoleMysql = new iam.Role(this, 'GlueRoleMysql', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-mysql`,
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
@@ -343,7 +366,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // XML ETL: reads from collect, writes to cleanse
+    // XML ETL (AWS Glue): reads from collect, writes to cleanse
     this.glueRoleXml = new iam.Role(this, 'GlueRoleXml', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-xml`,
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
@@ -351,7 +374,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       inlinePolicies: glueBasePolicy([this.collectBucket, this.cleanseBucket])
     });
 
-    // CSV ETL: reads from collect, writes to cleanse
+    // CSV ETL (AWS Glue): reads from collect, writes to cleanse
     this.glueRoleCsv = new iam.Role(this, 'GlueRoleCsv', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-csv`,
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
@@ -359,7 +382,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       inlinePolicies: glueBasePolicy([this.collectBucket, this.cleanseBucket])
     });
 
-    // Member 360 ETL: reads from cleanse, writes to consume
+    // Member 360 ETL (AWS Glue): reads from cleanse, writes to consume
     this.glueRoleMember360 = new iam.Role(this, 'GlueRoleMember360', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-member360`,
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
@@ -367,14 +390,14 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       inlinePolicies: glueBasePolicy([this.cleanseBucket, this.consumeBucket])
     });
 
-    // CloudWatch Log Groups
+    // Amazon CloudWatch log groups
     new logs.LogGroup(this, 'GlueJobLogGroup', {
       logGroupName: '/aws-glue/jobs/creditunion',
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
-    // CloudTrail for auditing all API calls
+    // AWS CloudTrail for auditing all API calls
     const trailBucket = new s3.Bucket(this, 'CloudTrailBucket', {
       bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-cloudtrail`,
       encryption: s3.BucketEncryption.KMS,
@@ -383,6 +406,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       enforceSSL: true,
       versioned: true,
       objectLockEnabled: true,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'cloudtrail/',
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true
     });
@@ -401,7 +426,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       })
     });
 
-    // S3 bucket policies — deny access unless from approved IAM roles
+    // Amazon S3 bucket policies — deny access unless from approved IAM roles
     // This allows CDK deployment roles, Glue roles, and Lambda roles while blocking direct access
     for (const bucket of [this.collectBucket, this.cleanseBucket, this.consumeBucket]) {
       bucket.addToResourcePolicy(new iam.PolicyStatement({
@@ -416,7 +441,6 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
               `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/creditunion-*`,
               `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`,
               `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/CreditUnion*`,
-              `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/TyAdmin`,
             ]
           },
           'StringNotEquals': {

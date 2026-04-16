@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -55,7 +57,7 @@ SELECT DISTINCT
     ssn_last_4,
     UPPER(TRIM(borrower_name)) as full_name_key,
     phone_number,
-    1 as total_loans,  -- Hard-code to 1 since it's always 1 loan per person
+    1 as total_loans,  -- Set to 1 per loan record in source data
     CAST(REGEXP_REPLACE(loan_amount, '[^0-9.]', '') as DOUBLE) as total_loan_amount,  -- Remove SUM
     CAST(interest_rate as DOUBLE) as interest_rate,  -- Remove AVG
 
@@ -165,7 +167,7 @@ SELECT DISTINCT
     CreditCards.card_type,
 
     -- Final Calculations
-    1 + -- Core banking (always present)
+    1 + -- Core banking (present for all matched members)
     CASE WHEN transform_4_add_crm.digital_user_id IS NOT NULL THEN 1 ELSE 0 END +
     CASE WHEN transform_4_add_crm.total_loans > 0 THEN 1 ELSE 0 END +
     CASE WHEN CreditCards.card_limit IS NOT NULL THEN 1 ELSE 0 END as product_count,

@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -12,6 +14,7 @@ interface CreditUnionETLStackProps extends cdk.StackProps {
   collectBucket: s3.Bucket;
   cleanseBucket: s3.Bucket;
   consumeBucket: s3.Bucket;
+  accessLogsBucket: s3.Bucket;
   glueRoleMysql: iam.Role;
   glueRoleXml: iam.Role;
   glueRoleCsv: iam.Role;
@@ -28,13 +31,15 @@ export class CreditUnionETLStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionETLStackProps) {
     super(scope, id, props);
 
-    // Create Glue assets bucket for ETL scripts
+    // Create AWS Glue assets bucket for ETL scripts
     const glueAssetsBucket = new s3.Bucket(this, 'GlueAssetsBucket', {
       bucketName: `creditunion-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`,
       encryption: s3.BucketEncryption.KMS,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       versioned: true,
+      serverAccessLogsBucket: props.accessLogsBucket,
+      serverAccessLogsPrefix: 'glue-assets/',
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true
     });
@@ -59,7 +64,7 @@ export class CreditUnionETLStack extends cdk.Stack {
       }
     }));
 
-    // Visual ETL Jobs
+    // AWS Glue Visual ETL jobs
     const visualETL = new VisualETLJobs(this, 'VisualETL', {
       mysqlRoleArn: props.glueRoleMysql.roleArn,
       xmlRoleArn: props.glueRoleXml.roleArn,
@@ -69,7 +74,7 @@ export class CreditUnionETLStack extends cdk.Stack {
       bucketName: props.cleanseBucket.bucketName
     });
 
-    // Step Functions State Machine Role
+    // AWS Step Functions state machine Role
     const stepFunctionRole = new iam.Role(this, 'StepFunctionRole', {
       assumedBy: new iam.ServicePrincipal('states.amazonaws.com'),
       inlinePolicies: {
@@ -106,14 +111,14 @@ export class CreditUnionETLStack extends cdk.Stack {
                 'logs:DescribeResourcePolicies',
                 'logs:DescribeLogGroups'
               ],
-              resources: ['*']
+              resources: [`arn:aws:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:*`]
             })
           ]
         })
       }
     });
 
-    // Step Functions State Machine Definition
+    // AWS Step Functions state machine Definition
     const definition = new stepfunctions.Choice(this, 'CheckExecutionMode')
       .when(
         stepfunctions.Condition.stringEquals('$.execution_mode', 'test'),
@@ -218,7 +223,7 @@ export class CreditUnionETLStack extends cdk.Stack {
           )
       );
 
-    // Create Step Functions State Machine
+    // Create AWS Step Functions state machine
     this.stepFunction = new stepfunctions.StateMachine(this, 'CreditUnionETLStateMachine', {
       definitionBody: stepfunctions.DefinitionBody.fromChainable(definition),
       role: stepFunctionRole,

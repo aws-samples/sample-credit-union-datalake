@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -23,14 +25,14 @@ export class RdsDataLoader extends Construct {
   constructor(scope: Construct, id: string, props: RdsDataLoaderProps) {
     super(scope, id);
 
-    // Create pymysql Lambda layer
+    // Create pymysql AWS Lambda layer
     const pymysqlLayer = new lambda.LayerVersion(this, 'PymysqlLayer', {
       code: lambda.Code.fromAsset('layers/pymysql'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_13],
       description: 'PyMySQL library for Lambda'
     });
 
-    // Lambda execution role
+    // AWS Lambda execution role
     const lambdaRole = new iam.Role(this, 'RdsLoaderRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -55,14 +57,14 @@ export class RdsDataLoader extends Construct {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['kms:Decrypt'],
-              resources: [props.collectBucket.encryptionKey?.keyArn || '*']
+              resources: [props.collectBucket.encryptionKey!.keyArn]
             })
           ]
         })
       }
     });
 
-    // Code signing for Lambda function integrity
+    // Code signing for AWS Lambda function integrity
     const signingProfile = new signer.SigningProfile(this, 'SigningProfile', {
       platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
       signatureValidity: cdk.Duration.days(365),
@@ -123,7 +125,8 @@ def lambda_handler(event, context):
             user=secret['username'],
             password=secret['password'],
             database=secret['dbname'],
-            port=secret['port']
+            port=secret['port'],
+            ssl={'ca': '/etc/pki/tls/certs/ca-bundle.crt'}
         )
         
         with connection.cursor() as cursor:
@@ -148,7 +151,7 @@ def lambda_handler(event, context):
       `)
     });
 
-    // Ensure Lambda waits for Secrets Manager VPC endpoint to be ready
+    // AWS Lambda depends on AWS Secrets Manager VPC endpoint being ready
     this.lambda.node.addDependency(props.secretsManagerEndpoint);
 
     // Note: Lambda can be manually triggered after deployment

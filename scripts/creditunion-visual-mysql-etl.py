@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions

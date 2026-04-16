@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { CreditUnionInfrastructureStack } from '../lib/creditunion-infrastructure-stack';
@@ -46,6 +48,7 @@ const etlStack = new CreditUnionETLStack(app, 'CreditUnionETLStack', {
   collectBucket: infrastructureStack.collectBucket,
   cleanseBucket: infrastructureStack.cleanseBucket,
   consumeBucket: infrastructureStack.consumeBucket,
+  accessLogsBucket: infrastructureStack.accessLogsBucket,
   glueRoleMysql: infrastructureStack.glueRoleMysql,
   glueRoleXml: infrastructureStack.glueRoleXml,
   glueRoleCsv: infrastructureStack.glueRoleCsv,

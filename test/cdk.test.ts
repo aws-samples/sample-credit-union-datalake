@@ -29,6 +29,7 @@ function buildStacks() {
     collectBucket: infra.collectBucket,
     cleanseBucket: infra.cleanseBucket,
     consumeBucket: infra.consumeBucket,
+    accessLogsBucket: infra.accessLogsBucket,
     glueRoleMysql: infra.glueRoleMysql,
     glueRoleXml: infra.glueRoleXml,
     glueRoleCsv: infra.glueRoleCsv,
@@ -61,7 +62,7 @@ describe('Infrastructure Stack', () => {
   });
 
   test('creates 3 S3 buckets with encryption', () => {
-    template.resourceCountIs('AWS::S3::Bucket', 4);
+    template.resourceCountIs('AWS::S3::Bucket', 5);
   });
 
   test('creates KMS key with rotation', () => {

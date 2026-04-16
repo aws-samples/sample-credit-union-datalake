@@ -6,7 +6,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
 
 ## What it deploys
 
-- **Amazon RDS MySQL** with ~2,000 sample core banking member records (auto-loaded)
+- **Amazon RDS for MySQL** with ~2,000 sample core banking member records (auto-loaded)
 - **Amazon S3 Data Lake** — collect, cleanse, and consume buckets with KMS encryption
 - **4 AWS Glue Visual ETL Jobs** — MySQL→Parquet, XML→Parquet, CSV→Parquet, Member 360 aggregation
 - **AWS Step Functions** pipeline with parallel/sequential orchestration
@@ -18,7 +18,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
 ```
                     ┌─────────────────────────────────────────┐
                     │            Data Sources                  │
-                    │  RDS MySQL · CSV Files · XML Files       │
+                    │  Amazon RDS for MySQL · CSV Files · XML Files       │
                     └──────────────────┬──────────────────────┘
                                        │
                     ┌──────────────────▼──────────────────────┐
@@ -54,12 +54,34 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
 
 ## Security
 
-- KMS encryption (customer-managed key with auto-rotation) on all S3 buckets and RDS
-- RDS in isolated subnets with no internet access
-- VPC endpoints for S3 and Secrets Manager (no public internet traffic)
-- S3 public access blocked, SSL enforced, versioning enabled
-- Least-privilege IAM roles per service (Glue, Lambda, Step Functions)
-- RDS credentials auto-generated in Secrets Manager, retrieved via VPC endpoint
+This project deploys security controls as a starting point. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS is responsible for the security *of* the cloud (infrastructure, compute, storage, networking), while customers are responsible for security *in* the cloud (configuration, access management, data protection). Customers are responsible for configuring and maintaining these controls for their specific requirements.
+
+### Implemented security controls
+
+The following controls are deployed by this project. Customers should review and customize these for their environment:
+
+- Customer-managed AWS KMS key with auto-rotation for Amazon S3 bucket and Amazon RDS encryption at rest
+- Amazon RDS deployed in isolated subnets with no internet access
+- Amazon VPC endpoints for Amazon S3 and AWS Secrets Manager (no public internet traffic)
+- Amazon S3 public access blocked, TLS enforced, versioning enabled, server access logging enabled
+- Per-job AWS IAM roles with least-privilege policies for AWS Glue, AWS Lambda, and AWS Step Functions
+- Amazon RDS credentials auto-generated in AWS Secrets Manager, retrieved via Amazon VPC endpoint
+- AWS CloudTrail with log file validation and immutable audit log bucket
+- Amazon VPC Flow Logs for network traffic monitoring
+- AWS Lambda code signing via AWS Signer for function integrity
+- AWS Glue job concurrency limits to prevent resource exhaustion
+
+### Customer responsibilities (post-deployment)
+
+Customers deploying this solution should:
+
+1. Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/) column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table
+2. Deploy [AWS Config](https://aws.amazon.com/config/) rules for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`)
+3. Review and customize AWS IAM role permissions for their specific access requirements
+4. Implement data classification and handling procedures appropriate for their regulatory environment
+5. Configure Amazon CloudWatch alarms for security-relevant metrics
+
+> **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without implementing appropriate data protection controls.
 
 ## Quick start
 
@@ -126,7 +148,7 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
 
 | Stack | Resources | Deploy time |
 |---|---|---|
-| `CreditUnionInfrastructureStack` | VPC, RDS MySQL, S3 buckets, KMS key, IAM roles | ~8–10 min |
+| `CreditUnionInfrastructureStack` | VPC, Amazon RDS for MySQL, S3 buckets, KMS key, IAM roles | ~8–10 min |
 | `CreditUnionDataStack` | Glue Data Catalog, crawlers, JDBC connection, Lambda functions | ~3–5 min |
 | `CreditUnionETLStack` | 4 Glue Visual ETL jobs, Step Functions state machine | ~2–3 min |
 | `CreditUnionTriggerStack` | Custom resources that auto-trigger the pipeline | ~1–2 min + ~10–15 min pipeline |

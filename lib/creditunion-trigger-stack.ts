@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -16,7 +18,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionTriggerStackProps) {
     super(scope, id, props);
 
-    // Custom resource to trigger RDS data loading
+    // Custom resource to trigger Amazon RDS for MySQL data loading
     const rdsDataLoadTrigger = new cr.AwsCustomResource(this, 'TriggerRdsDataLoad', {
       onCreate: {
         service: 'Lambda',
@@ -56,7 +58,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
       installLatestAwsSdk: false
     });
 
-    // Wait for crawlers to complete before triggering Step Function
+    // Wait for AWS Glue crawlers to complete before triggering Step Function
     const crawlerWaitFunction = this.createCrawlerWaitFunction();
     const waitForCrawlers = new cr.AwsCustomResource(this, 'WaitForCrawlers', {
       onCreate: {
@@ -78,7 +80,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
     });
     waitForCrawlers.node.addDependency(crawlerTrigger);
 
-    // Custom resource to trigger Step Function (after crawlers complete)
+    // Custom resource to trigger AWS Step Functions (after crawlers complete)
     const stepFunctionTrigger = new cr.AwsCustomResource(this, 'TriggerStepFunction', {
       onCreate: {
         service: 'StepFunctions',
@@ -187,7 +189,7 @@ def handler(event, context):
       memorySize: 128
     });
 
-    // Add Glue permissions — scoped to specific crawlers
+    // Add AWS Glue permissions — scoped to specific crawlers
     waitFunction.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['glue:GetCrawler'],

@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -34,7 +36,7 @@ export class CreditUnionDataStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionDataStackProps) {
     super(scope, id, props);
 
-    // RDS Data Loader - runs after all networking is established
+    // Amazon RDS data loader - runs after all networking is established
     this.rdsDataLoader = new RdsDataLoader(this, 'RdsDataLoader', {
       vpc: props.vpc,
       database: props.database,
@@ -43,7 +45,7 @@ export class CreditUnionDataStack extends cdk.Stack {
       secretsManagerEndpoint: props.secretsManagerEndpoint
     });
 
-    // Glue Databases
+    // AWS Glue databases
     this.cleanseDatabase = new glue.CfnDatabase(this, 'CleanseDatabase', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseInput: {
@@ -68,7 +70,7 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
-    // Glue Connection for MySQL
+    // AWS Glue connection for MySQL
     this.glueConnection = new glue.CfnConnection(this, 'MySQLConnection', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       connectionInput: {
@@ -76,7 +78,7 @@ export class CreditUnionDataStack extends cdk.Stack {
         description: 'Connection to Credit Union MySQL database',
         connectionType: 'JDBC',
         connectionProperties: {
-          JDBC_CONNECTION_URL: `jdbc:mysql://${props.database.instanceEndpoint.hostname}:3306/creditunion`,
+          JDBC_CONNECTION_URL: `jdbc:mysql://${props.database.instanceEndpoint.hostname}:3306/creditunion?useSSL=true&requireSSL=true`,
           USERNAME: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:username}}`,
           PASSWORD: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:password}}`
         },
@@ -205,12 +207,15 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Member Profile Table (Consume)
-    // TODO [THREAT-5]: Configure AWS Lake Formation post-deploy:
-    //   1. Register the consume S3 bucket as a Lake Formation data location
-    //   2. Grant column-level SELECT on member_profile, EXCLUDING: ssn, ssn_last_4, ssn_last_4_key
-    //   3. Create a masked view for SSN columns (e.g., '***-**-1234')
-    //   4. Restrict Athena/QuickSight IAM roles to Lake Formation-governed tables only
-    //   See .threatmodel/ for full threat context.
+    // Post-deployment: Configure AWS Lake Formation for column-level access controls.
+    // Priority: HIGH | Risk reduction: Prevents unauthorized access to SSN and PII columns
+    // Steps:
+    //   1. aws lakeformation register-resource --resource-arn <consume-bucket-arn>
+    //   2. aws lakeformation grant-permissions --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::ACCOUNT:role/analyst-role"}' \
+    //        --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
+    //        --permissions SELECT
+    //   3. Verify: aws lakeformation get-effective-permissions-for-path --resource-arn <consume-bucket-arn>
+    // See the Customer responsibilities section in README.md for details.
     new glue.CfnTable(this, 'MemberProfileTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.consumeDatabase.ref,
@@ -283,7 +288,7 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
-    // XML Crawlers for Credit Cards and CRM
+    // AWS Glue XML crawlers for Credit Cards and CRM
     const xmlCrawlerRole = new iam.Role(this, 'XMLCrawlerRole', {
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
       managedPolicies: [
@@ -303,7 +308,7 @@ export class CreditUnionDataStack extends cdk.Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
-              resources: [props.collectBucket.encryptionKey?.keyArn || '*']
+              resources: [props.collectBucket.encryptionKey!.keyArn]
             })
           ]
         })
@@ -353,7 +358,7 @@ export class CreditUnionDataStack extends cdk.Stack {
       untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
     });
 
-    // Lambda function to trigger crawlers
+    // AWS Lambda function to trigger crawlers
     this.crawlerTriggerFunction = new lambda.Function(this, 'CrawlerTriggerFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
