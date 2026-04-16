@@ -133,10 +133,16 @@ def lambda_handler(event, context):
             cursor.execute("DROP TABLE IF EXISTS core_banking_members")
             cursor.execute("CREATE TABLE core_banking_members (member_number VARCHAR(20) PRIMARY KEY, ssn VARCHAR(11), first_name VARCHAR(50), last_name VARCHAR(50), dob DATE, address VARCHAR(200), city VARCHAR(50), state VARCHAR(2), zip VARCHAR(10), phone VARCHAR(20), join_date DATE, checking_balance DECIMAL(10,2), savings_balance DECIMAL(10,2))")
             
-            # Use INSERT IGNORE to skip duplicates
+            # Use INSERT IGNORE to skip duplicates — validate fields before insertion
             csv_reader = csv.DictReader(StringIO(csv_content))
+            expected_fields = {'member_number','ssn','first_name','last_name','dob','address','city','state','zip','phone','join_date','checking_balance','savings_balance'}
             for row in csv_reader:
-                cursor.execute("INSERT IGNORE INTO core_banking_members VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", tuple(row.values()))
+                if not expected_fields.issubset(row.keys()):
+                    continue  # skip rows with unexpected schema
+                values = tuple(str(v)[:200] for v in row.values())  # truncate to prevent overflow
+                if len(values) != 13:
+                    continue  # skip malformed rows
+                cursor.execute("INSERT IGNORE INTO core_banking_members VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", values)
             
             connection.commit()
             cursor.execute("SELECT COUNT(*) FROM core_banking_members")

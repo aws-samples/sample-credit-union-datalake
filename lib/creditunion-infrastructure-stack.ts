@@ -283,7 +283,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // Amazon RDS for MySQL instance
+    // Amazon Relational Database Service (Amazon RDS) for MySQL instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
         version: rds.MysqlEngineVersion.VER_8_0_40
@@ -334,7 +334,6 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
           new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: [
-              'ec2:CreateNetworkInterface', 'ec2:DeleteNetworkInterface',
               'ec2:DescribeNetworkInterfaces', 'ec2:DescribeVpcs',
               'ec2:DescribeSubnets', 'ec2:DescribeSecurityGroups'
             ],
@@ -344,6 +343,17 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
                 'aws:RequestedRegion': [cdk.Aws.REGION]
               }
             }
+          }),
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'ec2:CreateNetworkInterface', 'ec2:DeleteNetworkInterface'
+            ],
+            resources: [
+              `arn:aws:ec2:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:network-interface/*`,
+              `arn:aws:ec2:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:subnet/*`,
+              `arn:aws:ec2:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:security-group/*`
+            ]
           })
         ]
       })

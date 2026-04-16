@@ -9,7 +9,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
 
 ## What it deploys
 
-- **Amazon RDS for MySQL** with ~2,000 sample core banking member records (auto-loaded)
+- **Amazon Relational Database Service (Amazon RDS) for MySQL** with ~2,000 sample core banking member records (auto-loaded)
 - **Amazon S3 Data Lake** — collect, cleanse, and consume buckets with KMS encryption
 - **4 AWS Glue Visual ETL Jobs** — MySQL→Parquet, XML→Parquet, CSV→Parquet, Member 360 aggregation
 - **AWS Step Functions** pipeline with parallel/sequential orchestration

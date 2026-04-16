@@ -51,7 +51,7 @@ The following metrics represent the security posture change from a baseline (no 
 
 **Customer action**: To configure MFA Delete on sensitive buckets using `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"`.
 
-## Amazon RDS for MySQL
+## Amazon Relational Database Service (Amazon RDS) for MySQL
 
 | Control | Status | Details |
 |---|---|---|

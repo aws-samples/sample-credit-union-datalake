@@ -81,6 +81,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
     waitForCrawlers.node.addDependency(crawlerTrigger);
 
     // Custom resource to trigger AWS Step Functions (after crawlers complete)
+    // Input parameters are fixed values — not user-provided — to control execution mode
     const stepFunctionTrigger = new cr.AwsCustomResource(this, 'TriggerStepFunction', {
       onCreate: {
         service: 'StepFunctions',
