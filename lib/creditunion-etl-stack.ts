@@ -111,7 +111,9 @@ export class CreditUnionETLStack extends cdk.Stack {
                 'logs:DescribeResourcePolicies',
                 'logs:DescribeLogGroups'
               ],
-              resources: [`arn:aws:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:*`]
+              resources: [
+                `arn:aws:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:/aws/vendedlogs/states/creditunion-etl-state-machine-Logs:*`
+              ]
             })
           ]
         })

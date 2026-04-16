@@ -337,6 +337,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
               'ec2:DescribeNetworkInterfaces', 'ec2:DescribeVpcs',
               'ec2:DescribeSubnets', 'ec2:DescribeSecurityGroups'
             ],
+            // AWS requires resource: '*' for EC2 Describe APIs — cannot be scoped to specific ARNs.
+            // Compensated with aws:RequestedRegion condition and AWS CloudTrail auditing.
             resources: ['*'],
             conditions: {
               StringEquals: {
