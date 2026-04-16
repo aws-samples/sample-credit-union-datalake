@@ -24,6 +24,7 @@ cp scripts/*.py "$SCAN_DIR/scripts/"
 # Config and docs
 cp cdk.json tsconfig.json package.json "$SCAN_DIR/"
 cp README.md LICENSE NOTICE CODE_OF_CONDUCT.md CONTRIBUTING.md "$SCAN_DIR/" 2>/dev/null
+cp -r docs/ "$SCAN_DIR/docs/" 2>/dev/null
 
 echo "Scan-ready files copied to $SCAN_DIR/"
 echo "File count: $(find "$SCAN_DIR" -type f | wc -l)"
