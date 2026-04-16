@@ -42,8 +42,9 @@ Security controls implemented in this project have been verified through:
    npx jest --verbose
    ```
 2. **Multiple rounds of automated security scanning** — Holmes Content Security Review baseline with iterative remediation
-3. **STRIDE threat model** — documented in [docs/threat-model.md](threat-model.md) with mitigations mapped to each threat
-4. **Code review** — all security changes reviewed for correctness before deployment
+3. **Security exceptions register** — documented in [docs/security-exceptions.md](security-exceptions.md) with approved exceptions for AWS-required wildcards
+4. **STRIDE threat model** — documented in [docs/threat-model.md](threat-model.md) with mitigations mapped to each threat
+5. **Code review** — all security changes reviewed for correctness before deployment
 
 To verify deployed controls, run the integration test suite:
 ```bash

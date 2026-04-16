@@ -109,8 +109,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
 
     // Amazon S3 buckets for data lake
     // Note: MFA Delete is not enabled because it requires root account credentials
-    // and cannot be configured via AWS CDK. This is documented as a post-deployment
-    // customer action in README.md and docs/security-guidelines.md (Priority P2).
+    // and cannot be configured via AWS CDK. Approved security exception: see
+    // docs/security-exceptions.md Exception 4. Post-deployment customer action (Priority P2).
     this.collectBucket = new s3.Bucket(this, 'CollectBucket', {
       bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-collect`,
       encryption: s3.BucketEncryption.KMS,
@@ -342,6 +342,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
               'ec2:DescribeSubnets', 'ec2:DescribeSecurityGroups'
             ],
             // AWS requires resource: '*' for EC2 Describe APIs — cannot be scoped to specific ARNs.
+            // Approved security exception: see docs/security-exceptions.md Exception 1.
             // Compensated with aws:RequestedRegion condition and AWS CloudTrail auditing.
             resources: ['*'],
             conditions: {
@@ -367,7 +368,8 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
 
     // MySQL ETL (AWS Glue): reads from RDS (collect), writes to cleanse
     // Note: AWSGlueServiceRole managed policy is required by AWS Glue service and contains
-    // broad permissions. Compensated with per-job roles limiting Amazon S3 access to specific
+    // broad permissions. Approved security exception: see docs/security-exceptions.md Exception 2.
+    // Compensated with per-job roles limiting Amazon S3 access to specific
     // bucket ARNs and AWS KMS access via kms:ViaService conditions. Audited via AWS CloudTrail.
     this.glueRoleMysql = new iam.Role(this, 'GlueRoleMysql', {
       roleName: `creditunion-${cdk.Aws.REGION}-glue-mysql`,
