@@ -400,17 +400,17 @@ def handler(event, context):
     // Outputs
     new cdk.CfnOutput(this, 'GlueConnectionName', {
       value: this.glueConnection.ref,
-      description: 'Glue connection for MySQL database'
+      description: 'AWS Glue connection for MySQL database'
     });
 
     new cdk.CfnOutput(this, 'CleanseDatabaseName', {
       value: this.cleanseDatabase.ref,
-      description: 'Glue database for cleansed data'
+      description: 'AWS Glue database for cleansed data'
     });
 
     new cdk.CfnOutput(this, 'ConsumeDatabaseName', {
       value: this.consumeDatabase.ref,
-      description: 'Glue database for analytics-ready data'
+      description: 'AWS Glue database for analytics-ready data'
     });
 
     new cdk.CfnOutput(this, 'RdsLambdaFunctionName', {

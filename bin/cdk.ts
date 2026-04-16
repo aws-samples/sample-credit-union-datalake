@@ -19,13 +19,13 @@ const infrastructureStack = new CreditUnionInfrastructureStack(app, 'CreditUnion
   description: 'Credit Union Analytics Platform - Infrastructure (S3, RDS, KMS, IAM, VPC)'
 });
 
-// Data Stack (Glue Databases, Tables, Connections, Crawlers)
+// Data Stack (AWS Glue Databases, Tables, Connections, Crawlers)
 const dataStack = new CreditUnionDataStack(app, 'CreditUnionDataStack', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
-  description: 'Credit Union Analytics Platform - Data Catalog (Glue Databases, Tables, Connections)',
+  description: 'Credit Union Analytics Platform - Data Catalog (AWS Glue Databases, Tables, Connections)',
   collectBucket: infrastructureStack.collectBucket,
   cleanseBucket: infrastructureStack.cleanseBucket,
   consumeBucket: infrastructureStack.consumeBucket,
@@ -38,13 +38,13 @@ const dataStack = new CreditUnionDataStack(app, 'CreditUnionDataStack', {
   secretsManagerEndpoint: infrastructureStack.secretsManagerEndpoint
 });
 
-// ETL Stack (Glue Jobs, Step Functions)
+// ETL Stack (AWS Glue Jobs, Step Functions)
 const etlStack = new CreditUnionETLStack(app, 'CreditUnionETLStack', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
-  description: 'Credit Union Analytics Platform - ETL Jobs (Glue Visual ETL, Step Functions)',
+  description: 'Credit Union Analytics Platform - ETL Jobs (AWS Glue Visual ETL, AWS Step Functions)',
   collectBucket: infrastructureStack.collectBucket,
   cleanseBucket: infrastructureStack.cleanseBucket,
   consumeBucket: infrastructureStack.consumeBucket,

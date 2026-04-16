@@ -226,7 +226,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     // Security group for AWS Glue jobs
     this.glueSecurityGroup = new ec2.SecurityGroup(this, 'GlueSecurityGroup', {
       vpc: this.vpc,
-      description: 'Security group for Glue jobs',
+      description: 'Security group for AWS Glue jobs',
       allowAllOutbound: true
     });
 
@@ -234,14 +234,14 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     this.glueSecurityGroup.addIngressRule(
       this.glueSecurityGroup,
       ec2.Port.allTcp(),
-      'Self-referencing rule for Glue worker communication'
+      'Self-referencing rule for AWS Glue worker communication'
     );
 
     // Allow AWS Glue to connect to Amazon RDS
     this.databaseSecurityGroup.addIngressRule(
       this.glueSecurityGroup,
       ec2.Port.tcp(3306),
-      'Allow Glue jobs to connect to MySQL'
+      'Allow AWS Glue jobs to connect to MySQL'
     );
 
     // Allow AWS Lambda (using database security group) to connect to itself for RDS access
@@ -271,7 +271,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       'Allow Lambda to access Secrets Manager VPC endpoint'
     );
 
-    // Note: Glue connection security group access is added in the data stack
+    // Note: AWS Glue connection security group access is added in the data stack
 
     // Create database secret
     this.databaseSecret = new secretsmanager.Secret(this, 'DatabaseSecret', {
@@ -427,7 +427,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     });
 
     // Amazon S3 bucket policies — deny access unless from approved IAM roles
-    // This allows CDK deployment roles, Glue roles, and Lambda roles while blocking direct access
+    // This allows CDK deployment roles, AWS Glue roles, and Lambda roles while blocking direct access
     for (const bucket of [this.collectBucket, this.cleanseBucket, this.consumeBucket]) {
       bucket.addToResourcePolicy(new iam.PolicyStatement({
         sid: 'DenyUnauthorizedAccess',
@@ -480,7 +480,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'GlueRoleArn', {
       value: this.glueRoleMysql.roleArn,
-      description: 'IAM role for MySQL Glue job'
+      description: 'IAM role for MySQL AWS Glue job'
     });
   }
 }

@@ -28,7 +28,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
               ┌────────────────────────┼────────────────────────┐
               │                        │                        │
     ┌─────────▼─────────┐  ┌──────────▼──────────┐  ┌─────────▼─────────┐
-    │  MySQL ETL (Glue)  │  │  XML ETL (Glue)     │  │  CSV ETL (Glue)   │
+    │  MySQL ETL (AWS Glue)  │  │  XML ETL (AWS Glue)     │  │  CSV ETL (AWS Glue)   │
     │  RDS → Parquet     │  │  XML → Parquet      │  │  CSV → Parquet    │
     └─────────┬─────────┘  └──────────┬──────────┘  └─────────┬─────────┘
               └────────────────────────┼────────────────────────┘
@@ -38,7 +38,7 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
                     └──────────────────┬──────────────────────┘
                                        │
                     ┌──────────────────▼──────────────────────┐
-                    │  Member 360 ETL (Glue)                   │
+                    │  Member 360 ETL (AWS Glue)                   │
                     │  Entity Resolution · 5-Source Join        │
                     └──────────────────┬──────────────────────┘
                                        │
@@ -73,15 +73,16 @@ The following controls are deployed by this project. Customers should review and
 
 ### Customer responsibilities (post-deployment)
 
-Customers deploying this solution should:
+The following security actions are the customer's ongoing responsibility and are required for production readiness. These controls are not automatically configured by the deployment:
 
-1. Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/) column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table
-2. Deploy [AWS Config](https://aws.amazon.com/config/) rules for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`)
-3. Review and customize AWS IAM role permissions for their specific access requirements
-4. Implement data classification and handling procedures appropriate for their regulatory environment
-5. Configure Amazon CloudWatch alarms for security-relevant metrics
+1. **[P0] Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/)** column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table. Without this, all authenticated users can query unmasked PII.
+2. **[P1] Deploy [AWS Config](https://aws.amazon.com/config/) rules** for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`). Without this, security group changes are logged but not actively monitored.
+3. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK.
+4. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
+5. **[P3] Configure Amazon CloudWatch alarms** for security-relevant metrics (failed AWS Step Functions executions, AWS KMS key deletion attempts, unauthorized API calls).
+6. **[P5] Configure AWS Secrets Manager automatic rotation** for the Amazon RDS database credentials.
 
-> **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without implementing appropriate data protection controls.
+> **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without first completing all post-deployment security actions listed above.
 
 ## Quick start
 
@@ -127,10 +128,10 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
 ├── bin/cdk.ts                              # CDK app entry point
 ├── lib/
 │   ├── creditunion-infrastructure-stack.ts  # VPC, RDS, S3, KMS, IAM
-│   ├── creditunion-data-stack.ts            # Glue Catalog, Crawlers, Connections
-│   ├── creditunion-etl-stack.ts             # Glue Jobs, Step Functions
+│   ├── creditunion-data-stack.ts            # AWS Glue Catalog, Crawlers, Connections
+│   ├── creditunion-etl-stack.ts             # AWS Glue Jobs, AWS Step Functions
 │   ├── creditunion-trigger-stack.ts         # Automation (Custom Resources)
-│   ├── visual-etl-simple.ts                 # Glue Job Definitions
+│   ├── visual-etl-simple.ts                 # AWS Glue Job Definitions
 │   └── rds-data-loader.ts                   # RDS Data Loading Construct
 ├── scripts/
 │   ├── creditunion-visual-mysql-etl.py      # MySQL → Parquet
@@ -149,8 +150,8 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
 | Stack | Resources | Deploy time |
 |---|---|---|
 | `CreditUnionInfrastructureStack` | VPC, Amazon RDS for MySQL, S3 buckets, KMS key, IAM roles | ~8–10 min |
-| `CreditUnionDataStack` | Glue Data Catalog, crawlers, JDBC connection, Lambda functions | ~3–5 min |
-| `CreditUnionETLStack` | 4 Glue Visual ETL jobs, Step Functions state machine | ~2–3 min |
+| `CreditUnionDataStack` | AWS Glue Data Catalog, crawlers, JDBC connection, Lambda functions | ~3–5 min |
+| `CreditUnionETLStack` | 4 AWS Glue Visual ETL jobs, Step Functions state machine | ~2–3 min |
 | `CreditUnionTriggerStack` | Custom resources that auto-trigger the pipeline | ~1–2 min + ~10–15 min pipeline |
 
 Deploy individually if needed:

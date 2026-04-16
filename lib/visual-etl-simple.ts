@@ -24,7 +24,7 @@ export class VisualETLJobs extends Construct {
   constructor(scope: Construct, id: string, props: VisualETLProps) {
     super(scope, id);
 
-    // Deploy Glue scripts to S3
+    // Deploy AWS Glue scripts to Amazon S3
     const glueAssetsBucket = s3.Bucket.fromBucketName(this, 'GlueAssetsBucket', 
       `aws-glue-assets-${cdk.Stack.of(this).account}-${cdk.Stack.of(this).region}`);
 
