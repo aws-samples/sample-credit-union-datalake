@@ -18,7 +18,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionTriggerStackProps) {
     super(scope, id, props);
 
-    // Custom resource to trigger Amazon RDS for MySQL data loading
+    // Custom resource to trigger Amazon Relational Database Service (Amazon RDS) for MySQL data loading
     const rdsDataLoadTrigger = new cr.AwsCustomResource(this, 'TriggerRdsDataLoad', {
       onCreate: {
         service: 'Lambda',

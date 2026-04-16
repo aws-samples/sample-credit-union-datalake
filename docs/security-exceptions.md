@@ -36,7 +36,7 @@ This document records approved security exceptions where AWS service requirement
 | **Resource** | RDS data loader AWS Lambda function |
 | **Policy** | `arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole` |
 | **Reason** | Required for AWS Lambda functions deployed in Amazon VPC. Contains EC2 network interface permissions with wildcard resources. |
-| **Compensating controls** | (1) AWS Lambda function deployed in private subnet only. (2) Security group restricts outbound to port 3306 (Amazon RDS) and 443 (AWS Secrets Manager VPC endpoint). (3) AWS Lambda code signing via AWS Signer prevents unauthorized code changes. (4) AWS CloudTrail audits all AWS Lambda API calls. |
+| **Compensating controls** | (1) AWS Lambda function deployed in private subnet only. (2) Security group restricts outbound to port 3306 (Amazon Relational Database Service (Amazon RDS)) and 443 (AWS Secrets Manager VPC endpoint). (3) AWS Lambda code signing via AWS Signer prevents unauthorized code changes. (4) AWS CloudTrail audits all AWS Lambda API calls. |
 | **Risk** | Low — function runs in isolated network with restricted egress. |
 | **Approved by** | Project security review |
 | **Review schedule** | Quarterly — verify no additional permissions have been added to the managed policy |

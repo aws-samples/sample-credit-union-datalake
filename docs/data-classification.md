@@ -19,7 +19,7 @@ This document defines the data classification levels and handling procedures for
 ## Data Flow by Classification
 
 ### Collect Zone (Amazon S3)
-- **Contains**: Raw data from all 5 source systems (Amazon RDS for MySQL, CSV, XML)
+- **Contains**: Raw data from all 5 source systems (Amazon Relational Database Service (Amazon RDS) for MySQL, CSV, XML)
 - **Classification**: Restricted + Confidential
 - **Controls**: AWS KMS encryption at rest, TLS in transit, Amazon S3 bucket policy restricting access to approved AWS IAM roles
 

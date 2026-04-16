@@ -20,7 +20,7 @@ This document provides a STRIDE-based threat analysis for the Credit Union Data 
 
 | Surface | Components | Exposure |
 |---|---|---|
-| Amazon RDS endpoints | MySQL on port 3306 | Isolated subnet, no internet access |
+| Amazon Relational Database Service (Amazon RDS) endpoints | MySQL on port 3306 | Isolated subnet, no internet access |
 | Amazon S3 buckets | collect, cleanse, consume | Bucket policies restrict to approved AWS IAM roles |
 | AWS Lambda functions | RDS data loader, crawler trigger | VPC-deployed, code signing enforced |
 | AWS Glue ETL jobs | 4 Visual ETL jobs | Per-job AWS IAM roles, concurrency limited |

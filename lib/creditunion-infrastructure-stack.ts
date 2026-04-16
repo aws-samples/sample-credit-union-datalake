@@ -40,7 +40,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       alias: 'creditunion-analytics-key'
     });
 
-    // Amazon VPC for Amazon RDS and AWS Glue
+    // Amazon VPC for Amazon Relational Database Service (Amazon RDS) and AWS Glue
     this.vpc = new ec2.Vpc(this, 'CreditUnionVPC', {
       maxAzs: 2,
       natGateways: 1,

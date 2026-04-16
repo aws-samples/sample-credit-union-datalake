@@ -22,7 +22,7 @@ This document describes the encryption key management strategy for the Credit Un
 The customer-managed AWS KMS key encrypts the following resources:
 
 - **Amazon S3 buckets**: collect, cleanse, consume, and AWS CloudTrail audit log buckets
-- **Amazon RDS for MySQL**: storage encryption at rest
+- **Amazon Relational Database Service (Amazon RDS) for MySQL**: storage encryption at rest
 - **AWS Glue assets bucket**: ETL script storage (uses AWS-managed KMS key)
 
 ## Access Controls
