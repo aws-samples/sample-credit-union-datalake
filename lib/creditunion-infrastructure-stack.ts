@@ -207,7 +207,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       prune: false
     });
 
-    // RDS MySQL Database
+    // Amazon RDS for MySQL database
     const dbSubnetGroup = new rds.SubnetGroup(this, 'DatabaseSubnetGroup', {
       vpc: this.vpc,
       description: 'Subnet group for Credit Union database',
@@ -248,14 +248,14 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     this.databaseSecurityGroup.addIngressRule(
       this.databaseSecurityGroup,
       ec2.Port.tcp(3306),
-      'Allow Lambda to connect to RDS MySQL'
+      'Allow AWS Lambda to connect to Amazon RDS for MySQL'
     );
 
-    // Allow AWS Lambda outbound to RDS MySQL
+    // Allow AWS Lambda outbound to Amazon RDS for MySQL
     this.databaseSecurityGroup.addEgressRule(
       this.databaseSecurityGroup,
       ec2.Port.tcp(3306),
-      'Allow Lambda outbound to RDS MySQL'
+      'Allow AWS Lambda outbound to Amazon RDS for MySQL'
     );
 
     // Allow AWS Lambda outbound HTTPS for S3 VPC endpoint
@@ -480,7 +480,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'DatabaseEndpoint', {
       value: this.database.instanceEndpoint.hostname,
-      description: 'RDS MySQL database endpoint'
+      description: 'Amazon RDS for MySQL database endpoint'
     });
 
     new cdk.CfnOutput(this, 'DatabaseSecretArn', {
