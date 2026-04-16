@@ -54,7 +54,12 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
 
 ## Security
 
-This project deploys security controls as a starting point. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS is responsible for the security *of* the cloud (infrastructure, compute, storage, networking), while customers are responsible for security *in* the cloud (configuration, access management, data protection). Customers are responsible for configuring and maintaining these controls for their specific requirements.
+This project deploys security controls as a starting point. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
+
+- **AWS is responsible for security *of* the cloud**: protecting the infrastructure that runs AWS services (hardware, software, networking, facilities).
+- **Customers are responsible for security *in* the cloud**: configuring and managing the services deployed by this project, including access management, data protection, and ongoing monitoring.
+
+Customers are responsible for configuring and maintaining these controls for their specific requirements.
 
 ### Implemented security controls
 

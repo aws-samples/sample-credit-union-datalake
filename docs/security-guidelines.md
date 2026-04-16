@@ -1,8 +1,14 @@
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Security Guidelines for AWS Services
 
 ## Overview
 
-This document provides security configuration guidelines for each AWS service used in the Credit Union Data Lake platform. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/), AWS manages infrastructure security while customers manage configuration and access.
+This document provides security configuration guidelines for each AWS service used in the Credit Union Data Lake platform. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
+
+- **AWS is responsible for security *of* the cloud**: protecting the infrastructure that runs all AWS services, including hardware, software, networking, and facilities.
+- **Customers are responsible for security *in* the cloud**: configuring and managing the AWS services deployed by this project, including access controls, encryption settings, network configuration, and data protection.
 
 ## Implementation Priority
 
