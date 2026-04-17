@@ -66,14 +66,14 @@ Customers are responsible for configuring and maintaining these controls for the
 
 ### Implemented security controls
 
-The following controls are deployed by this project. Customers should review and customize these for their environment:
+The following controls are deployed by this project as a baseline. Customers should review, validate, and customize these for their specific security and compliance requirements before production use:
 
 - Customer-managed AWS KMS key with auto-rotation for Amazon S3 bucket and Amazon RDS encryption at rest
-- Amazon RDS deployed in isolated subnets with no internet access
+- Amazon Relational Database Service (Amazon RDS) deployed in isolated subnets with no internet access
 - Amazon VPC endpoints for Amazon S3 and AWS Secrets Manager (no public internet traffic)
 - Amazon S3 public access blocked, TLS enforced, versioning enabled, server access logging enabled
 - Per-job AWS IAM roles with least-privilege policies for AWS Glue, AWS Lambda, and AWS Step Functions
-- Amazon RDS credentials auto-generated in AWS Secrets Manager, retrieved via Amazon VPC endpoint
+- Amazon Relational Database Service (Amazon RDS) credentials auto-generated in AWS Secrets Manager, retrieved via Amazon VPC endpoint
 - AWS CloudTrail with log file validation and immutable audit log bucket
 - Amazon VPC Flow Logs for network traffic monitoring
 - AWS Lambda code signing via AWS Signer for function integrity
@@ -94,10 +94,12 @@ Customers should complete the following security actions before using this solut
 
 ## Quick start
 
+Replace `YOUR_ORG` in the clone commands below with your Git hosting organization or user.
+
 ### Option 1: AWS CloudShell (easiest)
 
 ```bash
-git clone https://github.com/<your-org>/credit-union-data-lake.git
+git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
 cd credit-union-data-lake
 npm install
 npm run build
@@ -109,7 +111,7 @@ cdk deploy --all --require-approval never
 **Prerequisites:** AWS CLI configured, Node.js v18+, AWS CDK v2 (`npm install -g aws-cdk`)
 
 ```bash
-git clone https://github.com/<your-org>/credit-union-data-lake.git
+git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
 cd credit-union-data-lake
 npm install
 npm run build

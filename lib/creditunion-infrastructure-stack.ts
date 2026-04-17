@@ -33,14 +33,14 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // AWS KMS key for encryption
+    // AWS Key Management Service (AWS KMS) key for encryption
     this.kmsKey = new kms.Key(this, 'CreditUnionKMSKey', {
       description: 'KMS key for Credit Union Analytics Platform',
       enableKeyRotation: true,
       alias: 'creditunion-analytics-key'
     });
 
-    // Amazon VPC for Amazon Relational Database Service (Amazon RDS) and AWS Glue
+    // Amazon Virtual Private Cloud (Amazon VPC) for Amazon Relational Database Service (Amazon RDS) and AWS Glue
     this.vpc = new ec2.Vpc(this, 'CreditUnionVPC', {
       maxAzs: 2,
       natGateways: 1,
@@ -211,7 +211,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       prune: false
     });
 
-    // Amazon RDS for MySQL database
+    // Amazon Relational Database Service (Amazon RDS) for MySQL database
     const dbSubnetGroup = new rds.SubnetGroup(this, 'DatabaseSubnetGroup', {
       vpc: this.vpc,
       description: 'Subnet group for Credit Union database',
@@ -220,7 +220,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // Security group for Amazon RDS
+    // Security group for Amazon Relational Database Service (Amazon RDS)
     this.databaseSecurityGroup = new ec2.SecurityGroup(this, 'DatabaseSecurityGroup', {
       vpc: this.vpc,
       description: 'Security group for Credit Union database',
@@ -287,7 +287,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     });
 
-    // Amazon Relational Database Service (Amazon RDS) for MySQL instance
+    // Amazon RDS for MySQL instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
         version: rds.MysqlEngineVersion.VER_8_0_40

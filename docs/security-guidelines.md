@@ -56,6 +56,8 @@ The following metrics represent the security posture change from a baseline (no 
 
 ## Amazon S3
 
+The following controls are deployed by default. Customers should review and validate that these configurations meet their specific security and compliance requirements before production use.
+
 | Control | Status | Details |
 |---|---|---|
 | Block Public Access | ✅ Enabled | `BlockPublicAccess.BLOCK_ALL` on all buckets |

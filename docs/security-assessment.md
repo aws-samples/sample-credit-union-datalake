@@ -3,6 +3,15 @@
 
 # Security Assessment
 
+## Shared Responsibility Context
+
+Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
+
+- **AWS is responsible for security *of* the cloud**: protecting the infrastructure (hardware, software, networking, facilities) that runs all AWS services used by this project.
+- **Customers are responsible for security *in* the cloud**: configuring and maintaining the resources deployed by this project, including AWS IAM policies, data classification, access controls, patching of customer-managed resources, and ongoing monitoring.
+
+The findings and controls documented below are customer responsibilities. Customers should review, validate, and customize these controls for their specific compliance and operational requirements before production use.
+
 ## Scan Summary
 
 This project has undergone multiple rounds of automated security scanning using the Holmes Content Security Review baseline. Findings have been categorized by severity and addressed through code changes or documented compensating controls.
