@@ -11,6 +11,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
+import * as glue from 'aws-cdk-lib/aws-glue';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 export class CreditUnionInfrastructureStack extends cdk.Stack {
@@ -29,6 +31,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
   public readonly accessLogsBucket: s3.Bucket;
+  public readonly glueSecurityConfiguration: glue.CfnSecurityConfiguration;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -38,6 +41,26 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       description: 'KMS key for Credit Union Analytics Platform',
       enableKeyRotation: true,
       alias: 'creditunion-analytics-key'
+    });
+
+    // AWS Glue Security Configuration — encrypts CloudWatch logs, S3 data, and job bookmarks
+    // with the customer-managed AWS KMS key. Addresses cdk-nag AwsSolutions-GL1 / GL3.
+    this.glueSecurityConfiguration = new glue.CfnSecurityConfiguration(this, 'GlueSecurityConfiguration', {
+      name: 'creditunion-glue-security-config',
+      encryptionConfiguration: {
+        cloudWatchEncryption: {
+          cloudWatchEncryptionMode: 'SSE-KMS',
+          kmsKeyArn: this.kmsKey.keyArn
+        },
+        s3Encryptions: [{
+          s3EncryptionMode: 'SSE-KMS',
+          kmsKeyArn: this.kmsKey.keyArn
+        }],
+        jobBookmarksEncryption: {
+          jobBookmarksEncryptionMode: 'CSE-KMS',
+          kmsKeyArn: this.kmsKey.keyArn
+        }
+      }
     });
 
     // Amazon Virtual Private Cloud (Amazon VPC) for Amazon Relational Database Service (Amazon RDS) and AWS Glue
@@ -301,7 +324,12 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       storageEncrypted: true,
       storageEncryptionKey: this.kmsKey,
       backupRetention: cdk.Duration.days(7),
-      deletionProtection: false,
+      // Deletion protection prevents accidental deletion of the database.
+      // Addresses cdk-nag AwsSolutions-RDS10.
+      deletionProtection: true,
+      // RemovalPolicy.DESTROY is used because this is a demo/sample project intended
+      // to be torn down with `cdk destroy`. Production deployments should use
+      // RemovalPolicy.RETAIN or SNAPSHOT to prevent data loss.
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
@@ -503,5 +531,98 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       value: this.glueRoleMysql.roleArn,
       description: 'IAM role for MySQL AWS Glue job'
     });
+
+    // ==========================================================================
+    // cdk-nag suppressions — documented security exceptions
+    // See docs/security-exceptions.md for full justification of each item.
+    // ==========================================================================
+
+    // VPC endpoint SecurityGroup — EC23 false positive due to intrinsic function
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/CreditUnionVPC/SecretsManagerVPCEndpoint/SecurityGroup/Resource`
+    ], [
+      {
+        id: 'CdkNagValidationFailure',
+        reason: 'Rule cannot be evaluated because the VPC CIDR block is a CDK token resolved at deploy time. The security group is scoped to this VPC only and is only reachable by the Lambda security group via allowDefaultPortFrom.'
+      }
+    ]);
+
+    // All 4 Glue per-job roles + EC2 Describe wildcards (Exceptions 1 and 2)
+    for (const glueRole of [this.glueRoleMysql, this.glueRoleXml, this.glueRoleCsv, this.glueRoleMember360]) {
+      NagSuppressions.addResourceSuppressions(glueRole, [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'AWSGlueServiceRole managed policy is required by the AWS Glue service for job execution. Exception 2 in docs/security-exceptions.md. Compensating controls: per-job roles, scoped inline policies, kms:ViaService conditions, CloudTrail auditing.',
+          appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSGlueServiceRole']
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Object-level access (read/write individual keys) within scoped S3 buckets is required for ETL job execution. Wildcards apply only to object paths within specific bucket ARNs.',
+          appliesTo: [
+            'Resource::<CollectBucket1C9CFA0A.Arn>/*',
+            'Resource::<CleanseBucket5BF2E7B2.Arn>/*',
+            'Resource::<ConsumeBucketC306BBE5.Arn>/*'
+          ]
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'AWS EC2 Describe APIs require resource: \'*\' and do not support resource-level permissions. Exception 1 in docs/security-exceptions.md. Compensated with aws:RequestedRegion condition and CloudTrail auditing.',
+          appliesTo: [
+            'Resource::*',
+            'Resource::arn:aws:ec2:<AWS::Region>:<AWS::AccountId>:network-interface/*',
+            'Resource::arn:aws:ec2:<AWS::Region>:<AWS::AccountId>:security-group/*',
+            'Resource::arn:aws:ec2:<AWS::Region>:<AWS::AccountId>:subnet/*'
+          ]
+        }
+      ], true);
+    }
+
+    // RDS findings
+    NagSuppressions.addResourceSuppressions(this.database, [
+      {
+        id: 'AwsSolutions-RDS3',
+        reason: 'Multi-AZ is not enabled for this demo/sample project to minimize cost. Production deployments should enable multi-AZ via the `multiAz: true` property. Documented as customer responsibility.'
+      },
+      {
+        id: 'AwsSolutions-RDS11',
+        reason: 'Default port 3306 is retained for compatibility with standard MySQL tooling. Network-level protection is provided via isolated subnets and security group scoping (only Glue and Lambda security groups can reach the database).'
+      }
+    ]);
+
+    // Secrets Manager automatic rotation
+    NagSuppressions.addResourceSuppressions(this.databaseSecret, [
+      {
+        id: 'AwsSolutions-SMG4',
+        reason: 'Automatic rotation is documented as a post-deployment customer responsibility (P5 in README.md). Enabling rotation requires a rotation Lambda with database-specific configuration, which is intentionally left to the customer.'
+      }
+    ]);
+
+    // CDK-generated BucketDeployment Lambda (internal CDK construct)
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource`,
+      `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource`,
+      `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSLambdaBasicExecutionRole is applied by the CDK BucketDeployment construct. The construct is managed by AWS CDK and cannot be customized.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Wildcard permissions are defined by the CDK BucketDeployment construct to support uploading to the target bucket. The construct is managed by AWS CDK.',
+        appliesTo: [
+          'Action::s3:GetBucket*', 'Action::s3:GetObject*', 'Action::s3:List*',
+          'Action::s3:Abort*', 'Action::s3:DeleteObject*',
+          'Action::kms:GenerateDataKey*', 'Action::kms:ReEncrypt*',
+          'Resource::arn:aws:s3:::cdk-hnb659fds-assets-<AWS::AccountId>-us-east-1/*',
+          'Resource::<CollectBucket1C9CFA0A.Arn>/*'
+        ]
+      },
+      {
+        id: 'AwsSolutions-L1',
+        reason: 'Lambda runtime is managed by the AWS CDK BucketDeployment construct and updates with CDK library upgrades.'
+      }
+    ]);
   }
 }

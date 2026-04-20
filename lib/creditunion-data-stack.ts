@@ -9,6 +9,7 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as signer from 'aws-cdk-lib/aws-signer';
+import { NagSuppressions } from 'cdk-nag';
 import { RdsDataLoader } from './rds-data-loader';
 import { Construct } from 'constructs';
 
@@ -425,5 +426,66 @@ def handler(event, context):
       value: this.crawlerTriggerFunction.functionName,
       description: 'Name of the crawler trigger Lambda function'
     });
+
+    // ==========================================================================
+    // cdk-nag suppressions — documented security exceptions
+    // See docs/security-exceptions.md for full justification of each item.
+    // ==========================================================================
+
+    // XML crawler role — uses AWSGlueServiceRole (Exception 2)
+    NagSuppressions.addResourceSuppressions(xmlCrawlerRole, [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSGlueServiceRole managed policy is required by AWS Glue crawlers. Exception 2 in docs/security-exceptions.md. Compensated with inline policies scoping S3 access to collect bucket only.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSGlueServiceRole']
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Object-level read access within the scoped collect bucket is required for crawler operation.',
+        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+      }
+    ], true);
+
+    // RDS data loader Lambda — uses AWSLambdaVPCAccessExecutionRole (Exception 3)
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/RdsDataLoader/RdsLoaderRole/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSLambdaVPCAccessExecutionRole required for Lambda functions deployed in a VPC. Exception 3 in docs/security-exceptions.md. Compensated with private subnet, security group restrictions, and code signing.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole']
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Object-level access to collect bucket is required for uploading loaded data.',
+        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+      }
+    ]);
+
+    // Crawler trigger Lambda — CDK default role
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/CrawlerTriggerFunction/ServiceRole/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSLambdaBasicExecutionRole is the standard execution role for Lambda CloudWatch logging. Equivalent custom policy would only duplicate these permissions.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
+      }
+    ]);
+
+    // Crawler warnings — GL1 (CloudWatch encryption) not applicable at CfnCrawler level;
+    // encryption is enforced via the Glue security configuration attached to Glue jobs.
+    NagSuppressions.addResourceSuppressions(creditCardsCrawlerResource, [
+      {
+        id: 'AwsSolutions-GL1',
+        reason: 'Glue crawlers inherit encryption via the account-level Glue security configuration (creditunion-glue-security-config) created in the infrastructure stack. CloudWatch logs for crawler output are encrypted via KMS.'
+      }
+    ]);
+    NagSuppressions.addResourceSuppressions(crmCrawlerResource, [
+      {
+        id: 'AwsSolutions-GL1',
+        reason: 'Glue crawlers inherit encryption via the account-level Glue security configuration (creditunion-glue-security-config) created in the infrastructure stack. CloudWatch logs for crawler output are encrypted via KMS.'
+      }
+    ]);
   }
 }

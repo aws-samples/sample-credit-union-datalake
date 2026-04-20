@@ -38,6 +38,7 @@ function buildStacks() {
     cleanseDatabase: data.cleanseDatabase,
     consumeDatabase: data.consumeDatabase,
     xmlCatalogDatabase: data.xmlCatalogDatabase,
+    glueSecurityConfiguration: infra.glueSecurityConfiguration,
   });
   const trigger = new CreditUnionTriggerStack(app, 'TestTrigger', {
     env,

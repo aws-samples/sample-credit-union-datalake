@@ -13,6 +13,7 @@ export interface VisualETLProps {
   member360RoleArn: string;
   connectionName: string;
   bucketName: string;
+  securityConfigurationName: string;
 }
 
 export class VisualETLJobs extends Construct {
@@ -64,7 +65,8 @@ export class VisualETLJobs extends Construct {
       numberOfWorkers: 20,
       glueVersion: '4.0',
       executionClass: 'STANDARD',
-      executionProperty: { maxConcurrentRuns: 1 }
+      executionProperty: { maxConcurrentRuns: 1 },
+      securityConfiguration: props.securityConfigurationName
     });
 
     // XML Visual ETL Job
@@ -94,7 +96,8 @@ export class VisualETLJobs extends Construct {
       numberOfWorkers: 10,
       glueVersion: '4.0',
       executionClass: 'STANDARD',
-      executionProperty: { maxConcurrentRuns: 1 }
+      executionProperty: { maxConcurrentRuns: 1 },
+      securityConfiguration: props.securityConfigurationName
     });
 
     // CSV Visual ETL Job
@@ -124,7 +127,8 @@ export class VisualETLJobs extends Construct {
       numberOfWorkers: 10,
       glueVersion: '4.0',
       executionClass: 'STANDARD',
-      executionProperty: { maxConcurrentRuns: 1 }
+      executionProperty: { maxConcurrentRuns: 1 },
+      securityConfiguration: props.securityConfigurationName
     });
 
     // Member 360 Visual ETL Job
@@ -154,7 +158,8 @@ export class VisualETLJobs extends Construct {
       numberOfWorkers: 10,
       glueVersion: '4.0',
       executionClass: 'STANDARD',
-      executionProperty: { maxConcurrentRuns: 1 }
+      executionProperty: { maxConcurrentRuns: 1 },
+      securityConfiguration: props.securityConfigurationName
     });
   }
 }

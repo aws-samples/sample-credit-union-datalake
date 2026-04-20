@@ -3,12 +3,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { CreditUnionInfrastructureStack } from '../lib/creditunion-infrastructure-stack';
 import { CreditUnionDataStack } from '../lib/creditunion-data-stack';
 import { CreditUnionETLStack } from '../lib/creditunion-etl-stack';
 import { CreditUnionTriggerStack } from '../lib/creditunion-trigger-stack';
 
 const app = new cdk.App();
+
+// cdk-nag: AWS Solutions rule pack. Runs at synth time and reports resource-level
+// security / best-practice findings. Suppressions (with justification) are applied
+// at the construct level and should reference docs/security-exceptions.md where
+// applicable.
+cdk.Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 
 // Infrastructure Stack (S3, RDS, KMS, IAM, VPC)
 const infrastructureStack = new CreditUnionInfrastructureStack(app, 'CreditUnionInfrastructureStack', {
@@ -56,7 +63,8 @@ const etlStack = new CreditUnionETLStack(app, 'CreditUnionETLStack', {
   glueConnection: dataStack.glueConnection,
   cleanseDatabase: dataStack.cleanseDatabase,
   consumeDatabase: dataStack.consumeDatabase,
-  xmlCatalogDatabase: dataStack.xmlCatalogDatabase
+  xmlCatalogDatabase: dataStack.xmlCatalogDatabase,
+  glueSecurityConfiguration: infrastructureStack.glueSecurityConfiguration
 });
 
 // Trigger Stack (Optional - Custom Resources to auto-trigger Lambda functions)
