@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -18,6 +20,13 @@ glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
+
+# Resolve bucket names dynamically (no hardcoded account IDs)
+import boto3
+sts = boto3.client('sts')
+ACCOUNT_ID = sts.get_caller_identity()['Account']
+REGION = boto3.session.Session().region_name
+CLEANSE_BUCKET = f"creditunion-{ACCOUNT_ID}-{REGION}-cleanse"
 
 # Default ruleset used by all target nodes with data quality enabled
 DEFAULT_DATA_QUALITY_RULESET = """
@@ -92,13 +101,13 @@ CreditCards_Partition_SQL_Transform_node1754772383126 = sparkSqlQuery(glueContex
 
 # Script generated for node CRM_Target
 EvaluateDataQuality().process_rows(frame=CRM_Partition_SQL_Transform_node1754772496076, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754763739180", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-CRM_Target_node1754764005574 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-cleanse/CreditUnionData/CRM/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CRM_Target_node1754764005574")
+CRM_Target_node1754764005574 = glueContext.getSink(path=f"s3://{CLEANSE_BUCKET}/CreditUnionData/CRM/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CRM_Target_node1754764005574")
 CRM_Target_node1754764005574.setCatalogInfo(catalogDatabase="creditunion_xml_catalog",catalogTableName="crm_cleansed")
 CRM_Target_node1754764005574.setFormat("glueparquet", compression="snappy")
 CRM_Target_node1754764005574.writeFrame(CRM_Partition_SQL_Transform_node1754772496076)
 # Script generated for node CreditCards_Target
 EvaluateDataQuality().process_rows(frame=CreditCards_Partition_SQL_Transform_node1754772383126, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754763739180", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-CreditCards_Target_node1754763914996 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-cleanse/CreditUnionData/CreditCards/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CreditCards_Target_node1754763914996")
+CreditCards_Target_node1754763914996 = glueContext.getSink(path=f"s3://{CLEANSE_BUCKET}/CreditUnionData/CreditCards/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="CreditCards_Target_node1754763914996")
 CreditCards_Target_node1754763914996.setCatalogInfo(catalogDatabase="creditunion_xml_catalog",catalogTableName="creditcards_cleansed")
 CreditCards_Target_node1754763914996.setFormat("glueparquet", compression="snappy")
 CreditCards_Target_node1754763914996.writeFrame(CreditCards_Partition_SQL_Transform_node1754772383126)

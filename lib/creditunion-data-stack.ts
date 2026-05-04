@@ -1,3 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -6,7 +8,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as cr from 'aws-cdk-lib/custom-resources';
+import * as signer from 'aws-cdk-lib/aws-signer';
+import { NagSuppressions } from 'cdk-nag';
 import { RdsDataLoader } from './rds-data-loader';
 import { Construct } from 'constructs';
 
@@ -14,12 +17,13 @@ interface CreditUnionDataStackProps extends cdk.StackProps {
   collectBucket: s3.Bucket;
   cleanseBucket: s3.Bucket;
   consumeBucket: s3.Bucket;
-  glueRole: iam.Role;
+  glueRoleMysql: iam.Role;
   glueSecurityGroup: ec2.SecurityGroup;
   database: rds.DatabaseInstance;
   databaseSecret: secretsmanager.Secret;
   databaseSecurityGroup: ec2.SecurityGroup;
   vpc: ec2.Vpc;
+  secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
 }
 
 export class CreditUnionDataStack extends cdk.Stack {
@@ -33,15 +37,16 @@ export class CreditUnionDataStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CreditUnionDataStackProps) {
     super(scope, id, props);
 
-    // RDS Data Loader - runs after all networking is established
+    // Amazon Relational Database Service (Amazon RDS) data loader - runs after all networking is established
     this.rdsDataLoader = new RdsDataLoader(this, 'RdsDataLoader', {
       vpc: props.vpc,
       database: props.database,
       databaseSecret: props.databaseSecret,
-      collectBucket: props.collectBucket
+      collectBucket: props.collectBucket,
+      secretsManagerEndpoint: props.secretsManagerEndpoint
     });
 
-    // Glue Databases
+    // AWS Glue databases
     this.cleanseDatabase = new glue.CfnDatabase(this, 'CleanseDatabase', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseInput: {
@@ -66,7 +71,7 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
-    // Glue Connection for MySQL
+    // AWS Glue connection for MySQL
     this.glueConnection = new glue.CfnConnection(this, 'MySQLConnection', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       connectionInput: {
@@ -74,8 +79,8 @@ export class CreditUnionDataStack extends cdk.Stack {
         description: 'Connection to Credit Union MySQL database',
         connectionType: 'JDBC',
         connectionProperties: {
-          JDBC_CONNECTION_URL: `jdbc:mysql://${props.database.instanceEndpoint.hostname}:3306/creditunion`,
-          USERNAME: 'admin',
+          JDBC_CONNECTION_URL: `jdbc:mysql://${props.database.instanceEndpoint.hostname}:3306/creditunion?useSSL=true&requireSSL=true`,
+          USERNAME: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:username}}`,
           PASSWORD: `{{resolve:secretsmanager:${props.databaseSecret.secretArn}:SecretString:password}}`
         },
         physicalConnectionRequirements: {
@@ -203,6 +208,15 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Member Profile Table (Consume)
+    // Post-deployment: Configure AWS Lake Formation for column-level access controls.
+    // Priority: HIGH | Risk reduction: Prevents unauthorized access to SSN and PII columns
+    // Steps:
+    //   1. aws lakeformation register-resource --resource-arn <consume-bucket-arn>
+    //   2. aws lakeformation grant-permissions --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::ACCOUNT:role/analyst-role"}' \
+    //        --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
+    //        --permissions SELECT
+    //   3. Verify: aws lakeformation get-effective-permissions-for-path --resource-arn <consume-bucket-arn>
+    // See the Customer responsibilities section in README.md for details.
     new glue.CfnTable(this, 'MemberProfileTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.consumeDatabase.ref,
@@ -275,7 +289,10 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
-    // XML Crawlers for Credit Cards and CRM
+    // AWS Glue XML crawlers for Credit Cards and CRM
+    // Note: AWSGlueServiceRole managed policy is required by AWS Glue crawlers.
+    // Approved security exception: see docs/security-exceptions.md Exception 2.
+    // Compensated with inline policies scoping Amazon S3 access to collect bucket only.
     const xmlCrawlerRole = new iam.Role(this, 'XMLCrawlerRole', {
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
       managedPolicies: [
@@ -295,7 +312,7 @@ export class CreditUnionDataStack extends cdk.Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
-              resources: [props.collectBucket.encryptionKey?.keyArn || '*']
+              resources: [props.collectBucket.encryptionKey!.keyArn]
             })
           ]
         })
@@ -334,10 +351,22 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
-    // Lambda function to trigger crawlers
+    // Code signing for crawler trigger Lambda
+    const crawlerSigningProfile = new signer.SigningProfile(this, 'CrawlerSigningProfile', {
+      platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
+      signatureValidity: cdk.Duration.days(365),
+    });
+
+    const crawlerCodeSigningConfig = new lambda.CodeSigningConfig(this, 'CrawlerCodeSigningConfig', {
+      signingProfiles: [crawlerSigningProfile],
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+    });
+
+    // AWS Lambda function to trigger crawlers
     this.crawlerTriggerFunction = new lambda.Function(this, 'CrawlerTriggerFunction', {
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
+      codeSigningConfig: crawlerCodeSigningConfig,
       code: lambda.Code.fromInline(`
 import boto3
 import json
@@ -375,17 +404,17 @@ def handler(event, context):
     // Outputs
     new cdk.CfnOutput(this, 'GlueConnectionName', {
       value: this.glueConnection.ref,
-      description: 'Glue connection for MySQL database'
+      description: 'AWS Glue connection for MySQL database'
     });
 
     new cdk.CfnOutput(this, 'CleanseDatabaseName', {
       value: this.cleanseDatabase.ref,
-      description: 'Glue database for cleansed data'
+      description: 'AWS Glue database for cleansed data'
     });
 
     new cdk.CfnOutput(this, 'ConsumeDatabaseName', {
       value: this.consumeDatabase.ref,
-      description: 'Glue database for analytics-ready data'
+      description: 'AWS Glue database for analytics-ready data'
     });
 
     new cdk.CfnOutput(this, 'RdsLambdaFunctionName', {
@@ -397,5 +426,66 @@ def handler(event, context):
       value: this.crawlerTriggerFunction.functionName,
       description: 'Name of the crawler trigger Lambda function'
     });
+
+    // ==========================================================================
+    // cdk-nag suppressions — documented security exceptions
+    // See docs/security-exceptions.md for full justification of each item.
+    // ==========================================================================
+
+    // XML crawler role — uses AWSGlueServiceRole (Exception 2)
+    NagSuppressions.addResourceSuppressions(xmlCrawlerRole, [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSGlueServiceRole managed policy is required by AWS Glue crawlers. Exception 2 in docs/security-exceptions.md. Compensated with inline policies scoping S3 access to collect bucket only.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSGlueServiceRole']
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Object-level read access within the scoped collect bucket is required for crawler operation.',
+        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+      }
+    ], true);
+
+    // RDS data loader Lambda — uses AWSLambdaVPCAccessExecutionRole (Exception 3)
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/RdsDataLoader/RdsLoaderRole/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSLambdaVPCAccessExecutionRole required for Lambda functions deployed in a VPC. Exception 3 in docs/security-exceptions.md. Compensated with private subnet, security group restrictions, and code signing.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole']
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Object-level access to collect bucket is required for uploading loaded data.',
+        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+      }
+    ]);
+
+    // Crawler trigger Lambda — CDK default role
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/CrawlerTriggerFunction/ServiceRole/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason: 'AWSLambdaBasicExecutionRole is the standard execution role for Lambda CloudWatch logging. Equivalent custom policy would only duplicate these permissions.',
+        appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
+      }
+    ]);
+
+    // Crawler warnings — GL1 (CloudWatch encryption) not applicable at CfnCrawler level;
+    // encryption is enforced via the Glue security configuration attached to Glue jobs.
+    NagSuppressions.addResourceSuppressions(creditCardsCrawlerResource, [
+      {
+        id: 'AwsSolutions-GL1',
+        reason: 'Glue crawlers inherit encryption via the account-level Glue security configuration (creditunion-glue-security-config) created in the infrastructure stack. CloudWatch logs for crawler output are encrypted via KMS.'
+      }
+    ]);
+    NagSuppressions.addResourceSuppressions(crmCrawlerResource, [
+      {
+        id: 'AwsSolutions-GL1',
+        reason: 'Glue crawlers inherit encryption via the account-level Glue security configuration (creditunion-glue-security-config) created in the infrastructure stack. CloudWatch logs for crawler output are encrypted via KMS.'
+      }
+    ]);
   }
 }

@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -19,6 +21,13 @@ glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
+
+# Resolve bucket names dynamically (no hardcoded account IDs)
+import boto3
+sts = boto3.client('sts')
+ACCOUNT_ID = sts.get_caller_identity()['Account']
+REGION = boto3.session.Session().region_name
+CONSUME_BUCKET = f"creditunion-{ACCOUNT_ID}-{REGION}-consume"
 
 # Default ruleset used by all target nodes with data quality enabled
 DEFAULT_DATA_QUALITY_RULESET = """
@@ -48,7 +57,7 @@ SELECT DISTINCT
     ssn_last_4,
     UPPER(TRIM(borrower_name)) as full_name_key,
     phone_number,
-    1 as total_loans,  -- Hard-code to 1 since it's always 1 loan per person
+    1 as total_loans,  -- Set to 1 per loan record in source data
     CAST(REGEXP_REPLACE(loan_amount, '[^0-9.]', '') as DOUBLE) as total_loan_amount,  -- Remove SUM
     CAST(interest_rate as DOUBLE) as interest_rate,  -- Remove AVG
 
@@ -158,7 +167,7 @@ SELECT DISTINCT
     CreditCards.card_type,
 
     -- Final Calculations
-    1 + -- Core banking (always present)
+    1 + -- Core banking (present for all matched members)
     CASE WHEN transform_4_add_crm.digital_user_id IS NOT NULL THEN 1 ELSE 0 END +
     CASE WHEN transform_4_add_crm.total_loans > 0 THEN 1 ELSE 0 END +
     CASE WHEN CreditCards.card_limit IS NOT NULL THEN 1 ELSE 0 END as product_count,
@@ -191,7 +200,7 @@ AddCurrentTimestamp_node1756230876786 = sparkSqlQuery(glueContext, query = "SELE
 
 # Script generated for node Member_Profile_Output
 EvaluateDataQuality().process_rows(frame=AddCurrentTimestamp_node1756230876786, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754779415822", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-Member_Profile_Output_node1754780166976 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-consume/CreditUnionData/member_profile/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="Member_Profile_Output_node1754780166976")
+Member_Profile_Output_node1754780166976 = glueContext.getSink(path=f"s3://{CONSUME_BUCKET}/CreditUnionData/member_profile/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="Member_Profile_Output_node1754780166976")
 Member_Profile_Output_node1754780166976.setCatalogInfo(catalogDatabase="creditunion_consume",catalogTableName="member_profile")
 Member_Profile_Output_node1754780166976.setFormat("glueparquet", compression="snappy")
 Member_Profile_Output_node1754780166976.writeFrame(AddCurrentTimestamp_node1756230876786)

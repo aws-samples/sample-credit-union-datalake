@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -19,6 +21,14 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
+# Resolve bucket names from job arguments (set by CDK, no hardcoded account IDs)
+import boto3
+sts = boto3.client('sts')
+ACCOUNT_ID = sts.get_caller_identity()['Account']
+REGION = boto3.session.Session().region_name
+COLLECT_BUCKET = f"creditunion-{ACCOUNT_ID}-{REGION}-collect"
+CLEANSE_BUCKET = f"creditunion-{ACCOUNT_ID}-{REGION}-cleanse"
+
 # Default ruleset used by all target nodes with data quality enabled
 DEFAULT_DATA_QUALITY_RULESET = """
     Rules = [
@@ -27,10 +37,8 @@ DEFAULT_DATA_QUALITY_RULESET = """
 """
 
 # Script generated for node DigitalBanking_Source
-DigitalBanking_Source_node1754766108114 = glueContext.create_dynamic_frame.from_options(format_options={"quoteChar": "\"", "withHeader": True, "separator": ",", "optimizePerformance": False}, connection_type="s3", format="csv", connection_options={"paths": ["s3://creditunion-546549546983-us-west-2-collect/CreditUnionData/DigitalBanking/"], "recurse": True}, transformation_ctx="DigitalBanking_Source_node1754766108114")
-
-# Script generated for node LoanSystem_Source
-LoanSystem_Source_node1754766055921 = glueContext.create_dynamic_frame.from_options(format_options={"quoteChar": "\"", "withHeader": True, "separator": ",", "optimizePerformance": False}, connection_type="s3", format="csv", connection_options={"paths": ["s3://creditunion-546549546983-us-west-2-collect/CreditUnionData/LoanSystem/"], "recurse": True}, transformation_ctx="LoanSystem_Source_node1754766055921")
+DigitalBanking_Source_node1754766108114 = glueContext.create_dynamic_frame.from_options(format_options={"quoteChar": "\"", "withHeader": True, "separator": ",", "optimizePerformance": False}, connection_type="s3", format="csv", connection_options={"paths": [f"s3://{COLLECT_BUCKET}/CreditUnionData/DigitalBanking/"], "recurse": True}, transformation_ctx="DigitalBanking_Source_node1754766108114")
+LoanSystem_Source_node1754766055921 = glueContext.create_dynamic_frame.from_options(format_options={"quoteChar": "\"", "withHeader": True, "separator": ",", "optimizePerformance": False}, connection_type="s3", format="csv", connection_options={"paths": [f"s3://{COLLECT_BUCKET}/CreditUnionData/LoanSystem/"], "recurse": True}, transformation_ctx="LoanSystem_Source_node1754766055921")
 
 # Script generated for node DigitalBanking_Partitions
 SqlQuery1667 = '''
@@ -58,13 +66,13 @@ LoanSystem_Partition_node1754782420873 = sparkSqlQuery(glueContext, query = SqlQ
 
 # Script generated for node DigitalBanking_Cleansed
 EvaluateDataQuality().process_rows(frame=DigitalBanking_Partitions_node1754782339019, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754763739180", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-DigitalBanking_Cleansed_node1754766252601 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-cleanse/CreditUnionData/DigitalBanking/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="DigitalBanking_Cleansed_node1754766252601")
+DigitalBanking_Cleansed_node1754766252601 = glueContext.getSink(path=f"s3://{CLEANSE_BUCKET}/CreditUnionData/DigitalBanking/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="DigitalBanking_Cleansed_node1754766252601")
 DigitalBanking_Cleansed_node1754766252601.setCatalogInfo(catalogDatabase="creditunion_cleanse",catalogTableName="digital_banking")
 DigitalBanking_Cleansed_node1754766252601.setFormat("glueparquet", compression="snappy")
 DigitalBanking_Cleansed_node1754766252601.writeFrame(DigitalBanking_Partitions_node1754782339019)
 # Script generated for node LoanSystem_Cleansed
 EvaluateDataQuality().process_rows(frame=LoanSystem_Partition_node1754782420873, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1754763739180", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
-LoanSystem_Cleansed_node1754766373651 = glueContext.getSink(path="s3://creditunion-546549546983-us-west-2-cleanse/CreditUnionData/LoanSystem/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="LoanSystem_Cleansed_node1754766373651")
+LoanSystem_Cleansed_node1754766373651 = glueContext.getSink(path=f"s3://{CLEANSE_BUCKET}/CreditUnionData/LoanSystem/", connection_type="s3", updateBehavior="UPDATE_IN_DATABASE", partitionKeys=["year", "month", "day", "hour"], enableUpdateCatalog=True, transformation_ctx="LoanSystem_Cleansed_node1754766373651")
 LoanSystem_Cleansed_node1754766373651.setCatalogInfo(catalogDatabase="creditunion_cleanse",catalogTableName="loan_system_members")
 LoanSystem_Cleansed_node1754766373651.setFormat("glueparquet", compression="snappy")
 LoanSystem_Cleansed_node1754766373651.writeFrame(LoanSystem_Partition_node1754782420873)

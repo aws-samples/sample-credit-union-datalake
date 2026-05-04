@@ -1,559 +1,244 @@
-# Credit Union Data Lake (CUDL) - Complete CDK Implementation
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
-**Status**: Production Ready with Enterprise Security  
-**Last Updated**: September 1, 2025  
-**Version**: 2.0 - Fully Automated with Security Enhancements  
-**Repository**: https://gitlab.aws.dev/hofsbeno/sample-cu-datalake
+# Credit Union Data Lake (CUDL)
 
-## 🎯 **What This CDK Deploys**
+> **Sample code notice:** This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment. The sample data in `sample-data/` is synthetic and fictitious; do not use this solution with real customer data without first completing the post-deployment security actions listed below.
 
-This is a **complete, enterprise-grade** Credit Union Data Lake with full automation:
+A complete, deployable Member 360 data lake for credit unions built with the [AWS CDK](https://aws.amazon.com/cdk/). Ingests data from five heterogeneous source systems, performs entity resolution, and produces a unified member profile with 51 attributes — all with a single `cdk deploy --all` command.
 
-- **RDS MySQL Database** with 2,000 sample member records automatically loaded
-- **S3 Data Lake** with XML/CSV sample files and KMS encryption
-- **4 Complete Visual ETL Jobs** with smart orchestration
-- **Automated Step Functions Pipeline** with intelligent crawler detection
-- **Glue Data Catalog** with all databases, tables, and connections
-- **Enterprise Security** with VPC, KMS encryption, IAM least privilege, and private networking
+> **Sample data disclaimer:** All names, addresses, Social Security Numbers, phone numbers, and email addresses in `sample-data/` are entirely fictitious, generated using the Python Faker library. Any resemblance to real persons is purely coincidental.
 
-## ✨ **Latest Improvements (v2.0)**
+## What it deploys
 
-- ✅ **Full Automation**: Deploy all 4 stacks with single command
-- ✅ **Smart Timing**: Intelligent crawler completion detection (no fixed delays)
-- ✅ **Python 3.12**: Latest runtime for all Lambda functions
-- ✅ **Modern CDK**: Updated StateMachine definitions (no deprecation warnings)
-- ✅ **Enhanced Security**: KMS encryption, private networking, least privilege IAM
-- ✅ **Production Ready**: Passes AWS Well-Architected Framework assessment
+- **Amazon Relational Database Service (Amazon RDS) for MySQL** with ~2,000 sample core banking member records (auto-loaded)
+- **Amazon S3 Data Lake** — collect, cleanse, and consume buckets with KMS encryption
+- **4 AWS Glue Visual ETL Jobs** — MySQL→Parquet, XML→Parquet, CSV→Parquet, Member 360 aggregation
+- **AWS Step Functions** pipeline with parallel/sequential orchestration
+- **AWS Glue Data Catalog** — 3 databases, pre-defined table schemas, XML crawlers
+- **Full automation** — Lambda functions + CloudFormation custom resources trigger the entire pipeline on deploy
 
-## 🚀 **Quick Start (AWS CloudShell - Recommended)**
+## Architecture
 
-**AWS CloudShell is the easiest deployment method** - no local setup required!
+```
+                    ┌─────────────────────────────────────────┐
+                    │            Data Sources                  │
+                    │  Amazon RDS for MySQL · CSV Files · XML Files       │
+                    └──────────────────┬──────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │  Collect Zone (S3 — KMS Encrypted)       │
+                    └──────────────────┬──────────────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              │                        │                        │
+    ┌─────────▼─────────┐  ┌──────────▼──────────┐  ┌─────────▼─────────┐
+    │  MySQL ETL (AWS Glue)  │  │  XML ETL (AWS Glue)     │  │  CSV ETL (AWS Glue)   │
+    │  RDS → Parquet     │  │  XML → Parquet      │  │  CSV → Parquet    │
+    └─────────┬─────────┘  └──────────┬──────────┘  └─────────┬─────────┘
+              └────────────────────────┼────────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │  Cleanse Zone (S3 — Snappy Parquet)      │
+                    └──────────────────┬──────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │  Member 360 ETL (AWS Glue)                   │
+                    │  Entity Resolution · 5-Source Join        │
+                    └──────────────────┬──────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │  Consume Zone (S3 — Analytics-Ready)     │
+                    │  member_profile: 51 columns, ~2K rows    │
+                    └──────────────────┬──────────────────────┘
+                                       │
+                         ┌─────────────┴─────────────┐
+                         │                           │
+                    Amazon Athena            Amazon QuickSight
+```
 
-### **Step 1: Open AWS CloudShell**
-1. Log into AWS Console
-2. Click the **CloudShell** icon (terminal symbol) in the top toolbar
-3. Wait for CloudShell to initialize (~30 seconds)
+## Security
 
-### **Step 2: Deploy CUDL (4 Commands)**
+This project deploys security controls as a starting point. Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/shared-responsibility-model/):
+
+- **AWS is responsible for security *of* the cloud**: protecting the infrastructure that runs AWS services (hardware, software, networking, facilities).
+- **Customers are responsible for security *in* the cloud**: configuring and managing the services deployed by this project, including access management, data protection, and ongoing monitoring.
+
+Customers are responsible for configuring and maintaining these controls for their specific requirements.
+
+### Implemented security controls
+
+The following controls are deployed by this project as a baseline. Customers should review, validate, and customize these for their specific security and compliance requirements before production use:
+
+- Customer-managed AWS KMS key with auto-rotation for Amazon S3 bucket and Amazon RDS encryption at rest
+- Amazon Relational Database Service (Amazon RDS) deployed in isolated subnets with no internet access
+- Amazon VPC endpoints for Amazon S3 and AWS Secrets Manager (no public internet traffic)
+- Amazon S3 public access blocked, TLS enforced, versioning enabled, server access logging enabled
+- Per-job AWS IAM roles with least-privilege policies for AWS Glue, AWS Lambda, and AWS Step Functions
+- Amazon Relational Database Service (Amazon RDS) credentials auto-generated in AWS Secrets Manager, retrieved via Amazon VPC endpoint
+- AWS CloudTrail with log file validation and immutable audit log bucket
+- Amazon VPC Flow Logs for network traffic monitoring
+- AWS Lambda code signing via AWS Signer for function integrity
+- AWS Glue job concurrency limits to prevent resource exhaustion
+
+### Customer responsibilities (post-deployment)
+
+Customers should complete the following security actions before using this solution with production data. These controls are not automatically configured by the deployment and are the customer's ongoing responsibility:
+
+1. **[P0] Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/)** column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table. Without this, all authenticated users can query unmasked PII.
+2. **[P1] Deploy [AWS Config](https://aws.amazon.com/config/) rules** for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`). Without this, security group changes are logged but not actively monitored.
+3. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK.
+4. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
+5. **[P3] Configure Amazon CloudWatch alarms** for security-relevant metrics (failed AWS Step Functions executions, AWS KMS key deletion attempts, unauthorized API calls).
+6. **[P5] Configure AWS Secrets Manager automatic rotation** for the Amazon RDS database credentials.
+
+> **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without first completing all post-deployment security actions listed above.
+
+## Quick start
+
+Replace `YOUR_ORG` in the clone commands below with your Git hosting organization or user.
+
+### Option 1: AWS CloudShell (easiest)
+
 ```bash
-# Clone the repository
-git clone https://gitlab.aws.dev/hofsbeno/sample-cu-datalake.git
-
-# Navigate and install dependencies
-cd sample-cu-datalake
+git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
+cd credit-union-data-lake
 npm install
-
-# Build the project
 npm run build
-
-# Deploy everything automatically (25-35 minutes)
-cdk deploy --all --require-approval never --region us-west-2
+cdk deploy --all --require-approval never
 ```
 
-**That's it!** ✨ The CU Data Lake will deploy completely automatically and produce Member 360 profiles.
+### Option 2: Local development
 
-### **Step 3: Verify Results (Optional)**
+**Prerequisites:** AWS CLI configured, Node.js v18+, AWS CDK v2 (`npm install -g aws-cdk`)
+
 ```bash
-# Check final output - should show 51 columns and ~2000 rows
-aws s3 ls s3://creditunion-$(aws sts get-caller-identity --query Account --output text)-us-west-2-consume/CreditUnionData/ --recursive --region us-west-2
-
-# Check member_profile table schema
-aws glue get-table --database-name creditunion_consume --name member_profile --region us-west-2
-```
-
-## 💻 **Alternative: Local Development Setup**
-
-If you prefer local development:
-
-### **Prerequisites**
-- **AWS CLI** configured with admin permissions
-- **Node.js** v18+ installed
-- **AWS CDK** installed globally: `npm install -g aws-cdk`
-
-### **Local Deployment**
-```bash
-# Clone and setup
-git clone https://gitlab.aws.dev/hofsbeno/sample-cu-datalake.git
-cd sample-cu-datalake
+git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
+cd credit-union-data-lake
 npm install
 npm run build
-
-# Bootstrap CDK (first time only)
-cdk bootstrap --region us-west-2
-
-# Deploy
-cdk deploy --all --require-approval never --region us-west-2
+cdk bootstrap    # first time only
+cdk deploy --all --require-approval never
 ```
 
-## 🧪 **Testing Options**
+Deployment typically takes 25–35 minutes depending on region and account configuration. Actual times may vary. The pipeline runs automatically — no manual steps after deploy.
 
-### Option 1: Full Automation (Recommended)
-The deployment automatically runs the complete pipeline. No manual testing needed!
+## Verify results
 
-### Option 2: Manual Step Functions Test
 ```bash
-# Run complete pipeline manually
-aws stepfunctions start-execution \
-  --state-machine-arn $(aws stepfunctions list-state-machines --region us-west-2 --query 'stateMachines[?name==`creditunion-etl-state-machine`].stateMachineArn' --output text) \
-  --input '{"execution_mode": "test", "test_type": "full"}' \
-  --region us-west-2
+# Check consume bucket for member profiles
+aws s3 ls s3://creditunion-$(aws sts get-caller-identity --query Account --output text)-$(aws configure get region)-consume/CreditUnionData/ --recursive
+
+# Check member_profile table schema (51 columns expected)
+aws glue get-table --database-name creditunion_consume --name member_profile \
+  --query 'Table.StorageDescriptor.Columns[].Name'
 ```
 
-### Option 3: Individual Job Testing
-```bash
-# Test individual jobs (after crawlers complete)
-aws glue start-job-run --job-name creditunion-visual-mysql-etl --region us-west-2
-aws glue start-job-run --job-name creditunion-xml-collect-to-cleanse-visual --region us-west-2
-aws glue start-job-run --job-name creditunion_CSV_collect_to_cleanse_visual --region us-west-2
-aws glue start-job-run --job-name creditunion-member-360-visual-etl --region us-west-2
-```
-
-## 📊 **Expected Results**
-
-After successful deployment (25-35 minutes total):
-
-**Data Volumes:**
-- **RDS MySQL**: ~2,000 core banking members with SSN transformations
-- **S3 Collect**: 4 sample files (XML + CSV) with proper folder structure
-- **S3 Cleanse**: Processed Parquet files from all sources
-- **S3 Consume**: ~2,000 Member 360 profiles with 51 columns (47 data + 4 partition)
-
-**Automation Flow:**
-1. **RDS Loading** (parallel with) **XML Crawlers** → **Smart Crawler Detection** → **ETL Pipeline** → **Member 360 Profiles**
-
-**Deployment Timeline:**
-- **Infrastructure Stack**: ~8-10 minutes (VPC, RDS, S3, Security)
-- **Data Stack**: ~3-5 minutes (Glue Catalog, Crawlers)
-- **ETL Stack**: ~2-3 minutes (Visual ETL Jobs, Step Functions)
-- **Trigger Stack**: ~1-2 minutes (Automation Logic)
-- **Pipeline Execution**: ~10-15 minutes (Automated data processing)
-- **Total Time**: ~25-35 minutes end-to-end
-
-## 🔧 **Troubleshooting Guide**
-
-### Common Issues & Solutions
-
-**1. S3 File Path Issues**
-```bash
-# Check if sample data is in correct locations
-aws s3 ls s3://creditunion-$(aws sts get-caller-identity --query Account --output text)-us-west-2-collect/CreditUnionData/ --recursive --region us-west-2
-
-# Should show files in: CoreBanking_RDS_LoadOnly/, CreditCards/, CRMSystem/, etc.
-```
-
-**2. Lambda Function Errors**
-```bash
-# Check RDS data loader logs
-aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/CreditUnionDataStack-RdsDataLoader" --region us-west-2
-
-# Check crawler trigger logs
-aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/CreditUnionDataStack-CrawlerTrigger" --region us-west-2
-```
-
-**3. Glue Job Failures**
-```bash
-# Check specific job logs
-aws logs describe-log-groups --log-group-name-prefix "/aws-glue/jobs/creditunion" --region us-west-2
-
-# Check crawler status
-aws glue get-crawler --name creditunion-crm-xml-crawler --region us-west-2
-aws glue get-crawler --name creditunion-creditcards-xml-crawler --region us-west-2
-```
-
-**4. Step Functions Issues**
-```bash
-# Check execution status
-aws stepfunctions list-executions --state-machine-arn $(aws stepfunctions list-state-machines --region us-west-2 --query 'stateMachines[?name==`creditunion-etl-state-machine`].stateMachineArn' --output text) --region us-west-2
-```
-
-## 🔒 **Security Features**
-
-**Enterprise-Grade Security:**
-- ✅ **KMS Encryption**: All S3 buckets encrypted with customer-managed keys
-- ✅ **Private Networking**: RDS in private subnets, VPC endpoints for AWS services
-- ✅ **IAM Least Privilege**: Service-specific roles with minimal permissions
-- ✅ **Network Security**: Security groups restrict access to necessary ports only
-- ✅ **Public Access Blocked**: All S3 buckets have public access completely disabled
-- ✅ **Latest Runtimes**: Python 3.12, Node.js 22.x for security patches
-
-**Well-Architected Assessment: 95/100** ⭐⭐⭐⭐⭐
-
-## 📁 **Project Structure**
+## Project structure
 
 ```
-sample-cu-datalake/
+├── bin/cdk.ts                              # CDK app entry point
 ├── lib/
 │   ├── creditunion-infrastructure-stack.ts  # VPC, RDS, S3, KMS, IAM
-│   ├── creditunion-data-stack.ts           # Glue Catalog, Crawlers, Connections
-│   ├── creditunion-etl-stack.ts            # Visual ETL Jobs, Step Functions
-│   ├── creditunion-trigger-stack.ts        # Automation & Smart Orchestration
-│   ├── visual-etl-simple.ts                # ETL Job Definitions
-│   └── rds-data-loader.ts                  # RDS Data Loading Logic
-├── scripts/                                # Glue Job Python Scripts
-│   ├── creditunion-visual-mysql-etl.py     # MySQL → Parquet with SSN transformation
+│   ├── creditunion-data-stack.ts            # AWS Glue Catalog, Crawlers, Connections
+│   ├── creditunion-etl-stack.ts             # AWS Glue Jobs, AWS Step Functions
+│   ├── creditunion-trigger-stack.ts         # Automation (Custom Resources)
+│   ├── visual-etl-simple.ts                 # AWS Glue Job Definitions
+│   └── rds-data-loader.ts                   # RDS Data Loading Construct
+├── scripts/
+│   ├── creditunion-visual-mysql-etl.py      # MySQL → Parquet
 │   ├── creditunion-xml-collect-to-cleanse-visual.py  # XML → Parquet
 │   ├── creditunion_CSV_collect_to_cleanse_visual.py  # CSV → Parquet
-│   └── creditunion-member-360-visual-etl.py # Multi-source → Member 360
-├── sample-data/                            # Auto-uploaded to S3
-│   ├── core_banking_members.csv            # 2,000 member records
-│   ├── credit_cards.xml                    # Credit card data
-│   ├── crm_system.xml                      # CRM system data
-│   ├── digital_banking.csv                 # Digital banking data
-│   └── loan_system_members.csv             # Loan system data
-└── configs/                                # Configuration files
-    └── glue-job-configs.json               # ETL job parameters
+│   └── creditunion-member-360-visual-etl.py # Member 360 aggregation
+├── sample-data/                             # Synthetic data (auto-uploaded to S3)
+├── test/cdk.test.ts                         # CDK synthesis tests
+├── LICENSE                                  # Apache 2.0
+├── NOTICE                                   # Copyright + synthetic data disclaimer
+└── CONTRIBUTING.md                          # Contribution guidelines
 ```
 
-## 💰 **One-Time Deployment Cost**
+## CDK stacks
 
-**Cost to deploy and run the complete pipeline once (us-west-2):**
+| Stack | Resources | Deploy time |
+|---|---|---|
+| `CreditUnionInfrastructureStack` | VPC, Amazon RDS for MySQL, S3 buckets, KMS key, IAM roles | ~8–10 min |
+| `CreditUnionDataStack` | AWS Glue Data Catalog, crawlers, JDBC connection, Lambda functions | ~3–5 min |
+| `CreditUnionETLStack` | 4 AWS Glue Visual ETL jobs, Step Functions state machine | ~2–3 min |
+| `CreditUnionTriggerStack` | Custom resources that auto-trigger the pipeline | ~1–2 min + ~10–15 min pipeline |
 
-### **🆓 With AWS Free Tier (New Account)**
-- **RDS t3.micro**: $0 (750 hours free tier)
-- **S3 Storage**: $0 (5GB free tier)
-- **Glue Job Runs**: ~$2 (4 jobs × 10 DPUs × ~15 minutes total)
-- **Lambda Executions**: $0 (1M requests free tier)
-- **Step Functions**: $0 (4,000 state transitions free tier)
-- **KMS**: $0 (20,000 requests free tier)
-- **VPC/NAT Gateway**: ~$1.50 (1 hour usage)
-- **CloudWatch Logs**: $0 (5GB free tier)
-- **Total One-Time Cost**: **~$3.50**
-
-### **💳 Without Free Tier (Existing Account)**
-- **RDS t3.micro**: ~$0.50 (1 hour usage)
-- **S3 Storage**: ~$0.25 (sample data + output)
-- **Glue Job Runs**: ~$2.00 (4 jobs × 10 DPUs × ~15 minutes total)
-- **Lambda Executions**: ~$0.10 (data loading + automation)
-- **Step Functions**: ~$0.05 (state transitions)
-- **KMS**: ~$0.05 (encryption operations)
-- **VPC/NAT Gateway**: ~$1.50 (1 hour usage)
-- **CloudWatch Logs**: ~$0.10 (log storage)
-- **Total One-Time Cost**: **~$4.55**
-
-**💡 Cost Notes:**
-- Costs are for **single deployment and complete pipeline execution**
-- **Cleanup after testing**: Run `cdk destroy --all` to remove all resources
-- **Most expensive component**: NAT Gateway (~$1.50/hour) - removed during cleanup
-- **Data persists**: S3 data remains until manually deleted (~$0.25/month if kept)
-
-## 🔄 **Individual Stack Deployment (Advanced)**
-
-For troubleshooting or selective deployment:
+Deploy individually if needed:
 
 ```bash
-# Deploy stacks individually in dependency order
-cdk deploy CreditUnionInfrastructureStack --region us-west-2
-cdk deploy CreditUnionDataStack --region us-west-2
-cdk deploy CreditUnionETLStack --region us-west-2
-cdk deploy CreditUnionTriggerStack --region us-west-2  # This triggers automation
+cdk deploy CreditUnionInfrastructureStack
+cdk deploy CreditUnionDataStack
+cdk deploy CreditUnionETLStack
+cdk deploy CreditUnionTriggerStack
 ```
 
-## 🧹 **Cleanup (Remove Everything)**
+## Member 360 output schema
 
-```bash
-# WARNING: This deletes all data and resources
-cdk destroy --all --force --region us-west-2
+The `member_profile` table in the consume zone has 51 columns:
 
-# If cleanup fails due to dependencies, run individual destroys:
-cdk destroy CreditUnionTriggerStack --region us-west-2
-cdk destroy CreditUnionETLStack --region us-west-2
-cdk destroy CreditUnionDataStack --region us-west-2
-cdk destroy CreditUnionInfrastructureStack --region us-west-2
-```
+| Category | Columns |
+|---|---|
+| Core member data | golden_member_id, member_number, first_name, last_name, date_of_birth, address, city, state, zip, phone, member_since, checking_balance, savings_balance, total_balance |
+| Digital banking | digital_user_id, username, email, last_login, mobile_app_user, online_banking_user, bill_pay_enrolled, account_alerts, digital_engagement_score |
+| Entity resolution | ssn_last_4_key, full_name_key, primary_source, match_confidence, resolution_method, created_date |
+| Loan system | ssn_last_4, phone_number, total_loans, total_loan_amount, interest_rate, loan_type, term_months, application_date |
+| CRM | crm_email, last_contact_date, preferred_channel, marketing_consent |
+| Credit cards | card_limit_amount, card_type |
+| Analytics | product_count, risk_category, data_quality_score, runid |
+| Partitions | year, month, day, hour |
 
-### **⚠️ Additional Cleanup Steps**
+## Sample Athena queries
 
-**If you used Amazon Athena:**
-```bash
-# Delete Athena query results bucket (CDK doesn't manage this)
-aws s3 rm s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2/ --recursive --region us-west-2
-aws s3 rb s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2/ --region us-west-2
-```
+After deployment, query the data directly with Amazon Athena:
 
-**If you want to keep the data but remove compute resources:**
-```bash
-# Keep S3 data, remove only compute resources
-cdk destroy CreditUnionTriggerStack CreditUnionETLStack CreditUnionDataStack --region us-west-2
-# This preserves: S3 buckets with data, but removes: RDS, Glue jobs, Lambda functions
-```
-
-## 📊 **Data Schema**
-
-**Final Output: `member_profile` table (51 columns)**
-
-**Core Member Data (13 columns):**
-- golden_member_id, member_number, first_name, last_name, date_of_birth
-- address, city, state, zip, phone, member_since
-- checking_balance, savings_balance, total_balance
-
-**Digital Banking (9 columns):**
-- digital_user_id, username, email, last_login
-- mobile_app_user, online_banking_user, bill_pay_enrolled
-- account_alerts, digital_engagement_score
-
-**Entity Resolution (6 columns):**
-- ssn_last_4_key, full_name_key, primary_source
-- match_confidence, resolution_method, created_date
-
-**Loan System (6 columns):**
-- ssn_last_4, phone_number, total_loans, total_loan_amount
-- interest_rate, loan_type, term_months, application_date
-
-**CRM System (4 columns):**
-- crm_email, last_contact_date, preferred_channel, marketing_consent
-
-**Credit Cards (2 columns):**
-- card_limit_amount, card_type
-
-**Data Quality (2 columns):**
-- product_count, risk_category, data_quality_score
-
-**Partitions (4 columns):**
-- year, month, day, hour
-
-**Data Versioning (1 column):**
-- **runid** - Unique timestamp generated at Member360 job completion, enables data versioning and historical analysis in QuickSight and other analytical tools
-
-## 📊 **Sample Analytics with Amazon Athena**
-
-After deployment, you can immediately analyze your Member 360 data using Amazon Athena - no additional setup required!
-
-### **🔧 Athena Setup (One-Time)**
-
-1. **Create S3 Bucket for Query Results**
-   ```bash
-   # Create bucket for Athena query results (run in CloudShell)
-   aws s3 mb s3://aws-athena-query-results-$(aws sts get-caller-identity --query Account --output text)-us-west-2 --region us-west-2
-   ```
-
-2. **Open Amazon Athena Console**
-   - Go to AWS Console → Search "Athena" → Click "Amazon Athena"
-
-3. **Launch Query Editor (First-Time Users)**
-   - If this is your first time using Athena, you'll see engine options
-   - Click **"Launch query editor"** under **"Trino SQL"**
-   - (This is the standard SQL engine for data analysis)
-
-4. **Set Query Result Location**
-   - Click "Settings" tab → "Manage"
-   - Set location: `s3://aws-athena-query-results-YOUR_ACCOUNT_ID-us-west-2/`
-   - (Replace YOUR_ACCOUNT_ID with your actual AWS account ID)
-   - Click "Save"
-
-5. **Select Database**
-   - In "Database" dropdown, select: **`creditunion_consume`**
-   - You should see the `member_profile` table appear
-
-6. **Verify Data**
-   ```sql
-   -- Quick test query
-   SELECT COUNT(*) as total_members 
-   FROM member_profile;
-   ```
-   **Expected Result:** ~2,000 members
-
-### **📈 Sample Business Intelligence Queries**
-
-Copy and paste these queries into Athena to get immediate insights:
-
-#### **1. Data Quality Dashboard**
 ```sql
--- Overall data quality assessment
-SELECT 
-    COUNT(*) as total_members,
-    ROUND(AVG(data_quality_score), 1) as avg_quality_score,
-    COUNT(CASE WHEN data_quality_score >= 80 THEN 1 END) as high_quality_records,
-    ROUND(COUNT(CASE WHEN data_quality_score >= 80 THEN 1 END) * 100.0 / COUNT(*), 1) as high_quality_percentage,
-    COUNT(CASE WHEN email IS NOT NULL THEN 1 END) as members_with_email,
-    COUNT(CASE WHEN phone IS NOT NULL THEN 1 END) as members_with_phone
-FROM member_profile;
-```
-**Business Value:** Understand data completeness and quality for decision-making confidence.
-
-#### **2. Member Segmentation Analysis**
-```sql
--- Member segments by balance and digital engagement
-SELECT 
-    CASE 
-        WHEN total_balance >= 50000 THEN 'High Value ($50K+)'
-        WHEN total_balance >= 10000 THEN 'Medium Value ($10K-$50K)' 
-        ELSE 'Standard (<$10K)'
-    END as member_segment,
+-- Member segmentation by balance tier
+SELECT
     CASE
-        WHEN digital_engagement_score >= 80 THEN 'High Digital (80+)'
-        WHEN digital_engagement_score >= 50 THEN 'Medium Digital (50-79)'
-        ELSE 'Low Digital (<50)'
-    END as digital_segment,
-    COUNT(*) as member_count,
-    ROUND(AVG(total_balance), 2) as avg_balance,
-    ROUND(AVG(digital_engagement_score), 1) as avg_digital_score
-FROM member_profile
-GROUP BY 1, 2
-ORDER BY member_count DESC;
-```
-**Business Value:** Identify target segments for personalized marketing and product recommendations.
+        WHEN total_balance >= 50000 THEN 'High Value ($50K+)'
+        WHEN total_balance >= 10000 THEN 'Medium Value ($10K-$50K)'
+        ELSE 'Standard (<$10K)'
+    END as segment,
+    COUNT(*) as members,
+    ROUND(AVG(digital_engagement_score), 1) as avg_engagement
+FROM creditunion_consume.member_profile
+GROUP BY 1 ORDER BY avg_engagement DESC;
 
-#### **3. Premium Product Marketing Opportunities**
-```sql
--- High-balance members for premium product marketing
-SELECT 
-    member_number,
-    first_name,
-    last_name,
-    ROUND(total_balance, 2) as total_balance,
-    ROUND(checking_balance, 2) as checking_balance,
-    ROUND(savings_balance, 2) as savings_balance,
-    email,
-    phone,
-    state
-FROM member_profile
-WHERE total_balance > 30000 
-    AND email IS NOT NULL
-    AND email != ''
-ORDER BY total_balance DESC
-LIMIT 20;
-```
-**Business Value:** Identify high-net-worth members for premium banking products, investment services, or private banking offerings.
-
-#### **4. Risk Assessment Overview**
-```sql
--- Risk distribution and loan portfolio analysis
-SELECT 
-    risk_category,
-    COUNT(*) as member_count,
-    ROUND(AVG(total_loan_amount), 2) as avg_loan_amount,
-    ROUND(AVG(total_balance), 2) as avg_total_balance,
-    COUNT(CASE WHEN total_loans > 1 THEN 1 END) as multiple_loan_holders,
-    ROUND(AVG(interest_rate), 2) as avg_interest_rate
-FROM member_profile
+-- Risk assessment
+SELECT risk_category, COUNT(*) as members,
+    ROUND(AVG(total_loan_amount), 2) as avg_loan
+FROM creditunion_consume.member_profile
 WHERE risk_category IS NOT NULL
-GROUP BY risk_category
-ORDER BY member_count DESC;
+GROUP BY 1 ORDER BY members DESC;
 ```
-**Business Value:** Understand risk distribution and loan portfolio performance.
 
-#### **5. Digital Adoption by Member Tenure**
-```sql
--- Digital banking adoption trends by how long members have been with CU
-SELECT 
-    CASE 
-        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 10 THEN '10+ Years'
-        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 5 THEN '5-10 Years'
-        WHEN EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM member_since) >= 2 THEN '2-5 Years'
-        ELSE 'New Member (<2 Years)'
-    END as member_tenure,
-    COUNT(*) as total_members,
-    COUNT(CASE WHEN mobile_app_user = 'true' THEN 1 END) as mobile_users,
-    COUNT(CASE WHEN online_banking_user = 'true' THEN 1 END) as online_users,
-    COUNT(CASE WHEN bill_pay_enrolled = 'true' THEN 1 END) as bill_pay_users,
-    ROUND(COUNT(CASE WHEN mobile_app_user = 'true' THEN 1 END) * 100.0 / COUNT(*), 1) as mobile_adoption_rate
-FROM member_profile
-WHERE member_since IS NOT NULL
-GROUP BY 1
-ORDER BY total_members DESC;
+## Cost estimate
+
+Single deployment + pipeline run (us-west-2):
+
+| Service | Estimated cost |
+|---|---|
+| AWS Glue (4 jobs) | ~$2.00 |
+| NAT Gateway (1 hr) | ~$1.50 |
+| RDS t3.micro (1 hr) | ~$0.50 |
+| S3, Lambda, Step Functions, KMS, CloudWatch | ~$0.55 |
+| **Total** | **~$4.55** |
+
+With AWS Free Tier: ~$3.50. Run `cdk destroy --all` after testing to stop charges.
+
+## Clean up
+
+```bash
+cdk destroy --all --force
 ```
-**Business Value:** Understand digital adoption patterns and identify opportunities to increase engagement.
 
-#### **6. Marketing Campaign Targeting**
-```sql
--- High-engagement members for premium product marketing
-SELECT 
-    member_number,
-    first_name,
-    last_name,
-    ROUND(total_balance, 2) as total_balance,
-    mobile_app_user,
-    online_banking_user,
-    preferred_channel,
-    marketing_consent,
-    email,
-    last_contact_date,
-    product_count
-FROM member_profile
-WHERE total_balance > 25000
-    AND mobile_app_user = 'true'
-    AND online_banking_user = 'true'
-    AND marketing_consent = true
-    AND email IS NOT NULL
-    AND email != ''
-ORDER BY total_balance DESC
-LIMIT 50;
-```
-**Business Value:** Identify high-value, digitally engaged members for premium product marketing campaigns.
+## Contributing
 
-#### **7. Data Versioning and Freshness**
-```sql
--- Check data freshness and multiple runs
-SELECT 
-    runid,
-    COUNT(*) as record_count,
-    MIN(created_date) as earliest_record,
-    MAX(created_date) as latest_record,
-    COUNT(DISTINCT golden_member_id) as unique_members
-FROM member_profile
-GROUP BY runid
-ORDER BY runid DESC;
-```
-**Business Value:** Track data pipeline runs and ensure data freshness for reporting.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### **💡 Query Tips**
+## License
 
-**Cost Optimization:**
-- Athena charges ~$5 per TB scanned
-- Sample data is small (~2MB), so queries cost <$0.01 each
-- Use `LIMIT` clauses for testing
-
-**Performance Tips:**
-- Queries run faster on partitioned data (year/month/day/hour)
-- Use specific columns instead of `SELECT *`
-- Filter early in WHERE clauses
-
-**Next Steps:**
-- **Export Results:** Download query results as CSV
-- **Create Views:** Save frequently used queries as Athena views
-- **Build Dashboards:** Use query results in QuickSight, Tableau, or other BI tools
-- **Schedule Reports:** Use AWS Lambda to run queries automatically
-
-### **🔗 Advanced Analytics**
-
-Once you're comfortable with these queries, consider:
-- **Amazon QuickSight** for interactive dashboards (~$18/month per user)
-- **AWS Lambda** for automated reporting
-- **Amazon SES** for email reports
-- **Custom applications** using the Athena API
-
-✅ **All 4 stacks deploy successfully**  
-✅ **RDS contains ~2,000 member records with SSN transformations**  
-✅ **S3 contains sample files in correct folder structure**  
-✅ **All XML crawlers complete successfully**  
-✅ **All 4 Glue ETL jobs execute without errors**  
-✅ **Member 360 table contains ~2,000 profiles with 51 columns**  
-✅ **Automation pipeline completes end-to-end**  
-✅ **Security assessment passes with 95+ score**  
-
-## 🚀 **Next Steps**
-
-1. **Deploy** with CloudShell: 4 simple commands, 25-35 minutes total
-2. **Verify** Member 360 profiles are created (51 columns, ~2000 rows)
-3. **Connect** QuickSight or other BI tools to consume bucket
-4. **Customize** ETL jobs for your specific data sources
-5. **Scale** by adding more data sources and transformations
-
-## 🏆 **Enterprise Features**
-
-- **Production Ready**: Passes AWS Well-Architected Framework assessment
-- **Fully Automated**: Zero manual configuration required
-- **Secure by Design**: Enterprise-grade security controls
-- **Cost Optimized**: Serverless architecture with pay-per-use pricing
-- **Scalable**: Handles growing data volumes automatically
-- **Maintainable**: Infrastructure as Code with version control
-
-## 📞 **Support**
-
-- **Repository**: https://gitlab.aws.dev/hofsbeno/sample-cu-datalake
-- **Issues**: Use GitLab Issues for bug reports and feature requests
-- **Documentation**: This README covers all deployment and usage scenarios
-
----
-
-**The Credit Union Data Lake (CUDL) provides a complete, enterprise-grade analytics platform that deploys and runs automatically with zero manual intervention using AWS CloudShell.**
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
