@@ -3,6 +3,8 @@
 
 # Credit Union Data Lake (CUDL)
 
+> **Sample code notice:** This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment. The sample data in `sample-data/` is synthetic and fictitious; do not use this solution with real customer data without first completing the post-deployment security actions listed below.
+
 A complete, deployable Member 360 data lake for credit unions built with the [AWS CDK](https://aws.amazon.com/cdk/). Ingests data from five heterogeneous source systems, performs entity resolution, and produces a unified member profile with 51 attributes — all with a single `cdk deploy --all` command.
 
 > **Sample data disclaimer:** All names, addresses, Social Security Numbers, phone numbers, and email addresses in `sample-data/` are entirely fictitious, generated using the Python Faker library. Any resemblance to real persons is purely coincidental.
