@@ -7,7 +7,9 @@
 
 This document describes the encryption key management strategy for the Credit Union Data Lake platform deployed on AWS.
 
-## AWS KMS Key Configuration
+## AWS Key Management Service (AWS KMS) Key Configuration
+
+This document covers the Credit Union Data Lake's use of AWS Key Management Service (AWS KMS). Subsequent references use "AWS KMS".
 
 | Property | Value |
 |---|---|
@@ -66,18 +68,18 @@ Under the [AWS Shared Responsibility Model](https://aws.amazon.com/compliance/sh
 - **AWS** manages the underlying key infrastructure, hardware security modules (HSMs), and key material security.
 - **Customers** are responsible for the following actions, listed in priority order:
 
-**Priority 1 — Review key access grants:**
+**Priority 1 — Review key access grants (prevents unauthorized key usage and data exposure):**
 ```bash
 aws kms list-grants --key-id <key-id>
 aws kms list-key-policies --key-id <key-id>
 ```
 
-**Priority 2 — Monitor AWS CloudTrail for unauthorized key usage:**
+**Priority 2 — Monitor AWS CloudTrail for unauthorized key usage (detects anomalous decryption attempts):**
 ```bash
 aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=Decrypt --max-results 20
 ```
 
-**Priority 3 — Manage key deletion and rotation schedules.** Verify rotation is active:
+**Priority 3 — Manage key deletion and rotation schedules (ensures encryption remains current and prevents accidental key loss):** Verify rotation is active:
 ```bash
 aws kms get-key-rotation-status --key-id <key-id>
 ```

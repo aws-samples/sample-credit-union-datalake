@@ -53,7 +53,7 @@ This document provides a STRIDE-based threat analysis for the Credit Union Data 
 
 | Threat | Scenario | Mitigation |
 |---|---|---|
-| I-1 | Member profiles (51 columns, SSNs) exfiltrated from consume bucket | Amazon S3 bucket policy, AWS KMS encryption, per-job AWS IAM roles. Post-deploy: AWS Lake Formation column-level controls |
+| I-1 | Member profiles (51 columns, SSNs) exfiltrated from consume bucket | Amazon S3 bucket policy, AWS Key Management Service (AWS KMS) encryption, per-job AWS IAM roles. Post-deploy: AWS Lake Formation column-level controls |
 | I-2 | PII leaked through AWS Lambda error logs | Error messages sanitized — log error type only, not raw exception content |
 | I-3 | Database credentials exposed in code | Both username and password resolved dynamically via AWS Secrets Manager |
 
@@ -61,14 +61,14 @@ This document provides a STRIDE-based threat analysis for the Credit Union Data 
 
 | Threat | Scenario | Mitigation |
 |---|---|---|
-| D-1 | Excessive AWS Glue job runs exhaust DPU capacity | MaxConcurrentRuns=1 on all 4 jobs |
+| D-1 | Excessive AWS Glue job runs exhaust Data Processing Unit (DPU) capacity | MaxConcurrentRuns=1 on all 4 jobs |
 | D-2 | Amazon VPC security group misconfiguration blocks pipeline | Amazon VPC Flow Logs for detection. Post-deploy: AWS Config rules for monitoring |
 
 ### Elevation of Privilege
 
 | Threat | Scenario | Mitigation |
 |---|---|---|
-| E-1 | AWS Glue ETL script injection via shared role | 4 separate per-job AWS IAM roles with scoped Amazon S3 and AWS KMS access |
+| E-1 | AWS Glue ETL script injection via shared role | 4 separate per-job AWS IAM roles with scoped Amazon S3 and AWS Key Management Service (AWS KMS) access |
 | E-2 | AWS Lambda function code tampered | AWS Signer code signing on all Lambda functions |
 | E-3 | Trigger stack Lambda invokes arbitrary functions | Lambda invoke policy scoped to specific function ARN |
 
