@@ -71,7 +71,9 @@ The following controls are deployed by default. Customers should review and vali
 
 **Customers should** To configure MFA Delete on sensitive buckets using `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"`.
 
-## Amazon Relational Database Service (Amazon RDS) for MySQL
+## Amazon Relational Database Service (Amazon RDS)
+
+This section covers the Amazon Relational Database Service (Amazon RDS) deployment using the MySQL engine.
 
 | Control | Status | Details |
 |---|---|---|
@@ -138,18 +140,18 @@ Customers should perform the following access reviews on a quarterly basis:
 
 **Customers should** Configure Amazon CloudWatch metric filters and alarms for security-relevant API calls (e.g., `DeleteTrail`, `StopLogging`, `DisableKey`).
 
-## Amazon VPC
+## Amazon Virtual Private Cloud (Amazon VPC)
 
 | Control | Status | Details |
 |---|---|---|
 | Flow Logs | ✅ Enabled | All traffic logged to Amazon CloudWatch (3-month retention) |
-| VPC endpoints | ✅ Enabled | Amazon S3 (gateway) and AWS Secrets Manager (interface) |
+| Amazon VPC endpoints | ✅ Enabled | Amazon S3 (gateway) and AWS Secrets Manager (interface) |
 | Subnet isolation | ✅ Enabled | 3-tier: public, private with NAT, isolated for Amazon RDS |
 | Security groups | ✅ Scoped | Explicit port rules (3306, 443, TCP self-referencing for AWS Glue) |
 
 **Customers should** Deploy AWS Config rules for security group change detection. See README.md Customer responsibilities section.
 
-## AWS KMS
+## AWS Key Management Service (AWS KMS)
 
 | Control | Status | Details |
 |---|---|---|
