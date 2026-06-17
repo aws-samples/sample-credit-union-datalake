@@ -47,3 +47,5 @@ prepare-scan.sh
 
 # PCSR evidence pack (internal Amazon security review artifact)
 docs/pcsr-evidence.md
+docs/pcsr-guardian-response.md
+docs/pcsr-scan-scope.md

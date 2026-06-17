@@ -86,11 +86,72 @@ The following controls are deployed by this project as a baseline. Customers sho
 Customers should complete the following security actions before using this solution with production data. These controls are not automatically configured by the deployment and are the customer's ongoing responsibility:
 
 1. **[P0] Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/)** column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table. Without this, all authenticated users can query unmasked PII.
+
+   ```bash
+   aws lakeformation grant-permissions \
+     --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::ACCOUNT:role/analyst-role"}' \
+     --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
+     --permissions SELECT
+   ```
+
 2. **[P1] Deploy [AWS Config](https://aws.amazon.com/config/) rules** for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`). Without this, security group changes are logged but not actively monitored.
+
+   ```bash
+   aws configservice put-config-rule --config-rule '{
+     "ConfigRuleName": "ec2-sg-attached-to-eni",
+     "Source": {"Owner": "AWS", "SourceIdentifier": "EC2_SECURITY_GROUP_ATTACHED_TO_ENI_PERIODIC"}
+   }'
+   aws configservice put-config-rule --config-rule '{
+     "ConfigRuleName": "vpc-sg-open-only-authorized-ports",
+     "Source": {"Owner": "AWS", "SourceIdentifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS"}
+   }'
+   ```
+
 3. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK.
+
+   ```bash
+   aws s3api put-bucket-versioning \
+     --bucket creditunion-ACCOUNT-REGION-collect \
+     --versioning-configuration Status=Enabled,MFADelete=Enabled \
+     --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP_CODE"
+   ```
+
 4. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
+
+   ```bash
+   aws iam list-attached-role-policies --role-name creditunion-REGION-glue-mysql
+   aws iam get-role-policy --role-name creditunion-REGION-glue-mysql --policy-name S3Access
+   ```
+
 5. **[P3] Configure Amazon CloudWatch alarms** for security-relevant metrics (failed AWS Step Functions executions, AWS KMS key deletion attempts, unauthorized API calls).
+
+   ```bash
+   aws cloudwatch put-metric-alarm \
+     --alarm-name step-functions-failures \
+     --alarm-description "Alert on Step Functions execution failures" \
+     --metric-name ExecutionsFailed \
+     --namespace AWS/States \
+     --statistic Sum --period 300 --threshold 1 \
+     --comparison-operator GreaterThanOrEqualToThreshold \
+     --evaluation-periods 1
+
+   aws cloudwatch put-metric-alarm \
+     --alarm-name kms-key-deletion-attempts \
+     --alarm-description "Alert on KMS ScheduleKeyDeletion API calls" \
+     --metric-name ScheduleKeyDeletion \
+     --namespace AWS/KMS \
+     --statistic Sum --period 300 --threshold 1 \
+     --comparison-operator GreaterThanOrEqualToThreshold \
+     --evaluation-periods 1
+   ```
+
 6. **[P5] Configure AWS Secrets Manager automatic rotation** for the Amazon RDS database credentials.
+
+   ```bash
+   aws secretsmanager rotate-secret \
+     --secret-id SECRET_ARN \
+     --rotation-rules '{"AutomaticallyAfterDays":30}'
+   ```
 
 > **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without first completing all post-deployment security actions listed above.
 

@@ -610,14 +610,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       },
       {
         id: 'AwsSolutions-IAM5',
-        reason: 'Wildcard permissions are defined by the CDK BucketDeployment construct to support uploading to the target bucket. The construct is managed by AWS CDK.',
-        appliesTo: [
-          'Action::s3:GetBucket*', 'Action::s3:GetObject*', 'Action::s3:List*',
-          'Action::s3:Abort*', 'Action::s3:DeleteObject*',
-          'Action::kms:GenerateDataKey*', 'Action::kms:ReEncrypt*',
-          'Resource::arn:aws:s3:::cdk-hnb659fds-assets-<AWS::AccountId>-us-east-1/*',
-          'Resource::<CollectBucket1C9CFA0A.Arn>/*'
-        ]
+        reason: 'Wildcard permissions are defined by the CDK BucketDeployment construct to support uploading sample data to the target bucket. The construct is managed by AWS CDK and its DefaultPolicy cannot be customized. Suppression is account/region-agnostic because the resolved bucket ARNs include the account ID and region.'
       },
       {
         id: 'AwsSolutions-L1',
