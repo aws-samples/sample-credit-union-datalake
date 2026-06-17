@@ -293,15 +293,7 @@ export class CreditUnionETLStack extends cdk.Stack {
       },
       {
         id: 'AwsSolutions-IAM5',
-        reason: 'Wildcard permissions are defined by the CDK BucketDeployment construct to support uploading Glue scripts to the target bucket. The construct is managed by AWS CDK.',
-        appliesTo: [
-          'Action::s3:GetBucket*', 'Action::s3:GetObject*', 'Action::s3:List*',
-          'Action::s3:Abort*', 'Action::s3:DeleteObject*',
-          'Action::kms:GenerateDataKey*', 'Action::kms:ReEncrypt*',
-          'Resource::arn:aws:s3:::cdk-hnb659fds-assets-<AWS::AccountId>-us-east-1/*',
-          'Resource::arn:aws:s3:::aws-glue-assets-<AWS::AccountId>-us-east-1/*',
-          'Resource::<GlueAssetsBucketB368C580.Arn>/*'
-        ]
+        reason: 'Wildcard permissions are defined by the CDK BucketDeployment construct to support uploading Glue scripts to the CDK assets and Glue assets buckets. The construct is managed by AWS CDK and its DefaultPolicy cannot be customized. Suppression is account/region-agnostic because the resolved bucket ARNs include the account ID and region.'
       },
       {
         id: 'AwsSolutions-L1',
