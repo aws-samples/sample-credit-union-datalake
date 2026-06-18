@@ -43,6 +43,28 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       alias: 'creditunion-analytics-key'
     });
 
+    // Allow the Amazon CloudWatch Logs service to use the key to encrypt AWS Glue job
+    // log groups (the Glue security configuration enables SSE-KMS on those log groups).
+    // Scoped via the encryption-context condition to log groups in this account/region.
+    this.kmsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowCloudWatchLogsEncryption',
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.ServicePrincipal(`logs.${cdk.Aws.REGION}.amazonaws.com`)],
+      actions: [
+        'kms:Encrypt',
+        'kms:Decrypt',
+        'kms:ReEncrypt*',
+        'kms:GenerateDataKey*',
+        'kms:DescribeKey'
+      ],
+      resources: ['*'],
+      conditions: {
+        ArnLike: {
+          'kms:EncryptionContext:aws:logs:arn': `arn:aws:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:*`
+        }
+      }
+    }));
+
     // AWS Glue Security Configuration — encrypts CloudWatch logs, S3 data, and job bookmarks
     // with the customer-managed AWS KMS key. Addresses cdk-nag AwsSolutions-GL1 / GL3.
     this.glueSecurityConfiguration = new glue.CfnSecurityConfiguration(this, 'GlueSecurityConfiguration', {
@@ -313,7 +335,12 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     // Amazon RDS for MySQL instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
-        version: rds.MysqlEngineVersion.VER_8_0_40
+        // AWS retires older MySQL minor versions over time. If deployment fails with
+        // "Cannot find version X for mysql", list currently available versions with:
+        //   aws rds describe-db-engine-versions --engine mysql \
+        //     --query "DBEngineVersions[?starts_with(EngineVersion,'8.0')].EngineVersion" --output text
+        // and update the version string below to an available one.
+        version: rds.MysqlEngineVersion.of('8.0.46', '8.0')
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       credentials: rds.Credentials.fromSecret(this.databaseSecret),
@@ -358,6 +385,26 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
                 ]
               }
             }
+          })
+        ]
+      }),
+      LogsAccess: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            // The Glue security configuration enables SSE-KMS encryption on the job's
+            // CloudWatch log group. AWS Glue calls logs:AssociateKmsKey at job start to
+            // attach the customer-managed key; without this the job fails. Scoped to the
+            // AWS Glue managed log-group path.
+            actions: [
+              'logs:AssociateKmsKey',
+              'logs:CreateLogGroup',
+              'logs:CreateLogStream',
+              'logs:PutLogEvents'
+            ],
+            resources: [
+              `arn:aws:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:/aws-glue/*`
+            ]
           })
         ]
       }),
@@ -557,11 +604,12 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
         },
         {
           id: 'AwsSolutions-IAM5',
-          reason: 'Object-level access (read/write individual keys) within scoped S3 buckets is required for ETL job execution. Wildcards apply only to object paths within specific bucket ARNs.',
+          reason: 'Object-level access (read/write individual keys) within scoped S3 buckets, and logs:AssociateKmsKey on the AWS Glue managed log-group path, are required for ETL job execution with the Glue security configuration. Wildcards apply only to object paths within specific bucket ARNs and to the /aws-glue/* log-group namespace.',
           appliesTo: [
             'Resource::<CollectBucket1C9CFA0A.Arn>/*',
             'Resource::<CleanseBucket5BF2E7B2.Arn>/*',
-            'Resource::<ConsumeBucketC306BBE5.Arn>/*'
+            'Resource::<ConsumeBucketC306BBE5.Arn>/*',
+            'Resource::arn:aws:logs:<AWS::Region>:<AWS::AccountId>:log-group:/aws-glue/*'
           ]
         },
         {

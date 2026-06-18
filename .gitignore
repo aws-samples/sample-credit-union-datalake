@@ -49,3 +49,5 @@ prepare-scan.sh
 docs/pcsr-evidence.md
 docs/pcsr-guardian-response.md
 docs/pcsr-scan-scope.md
+docs/pcsr-ticket-package.md
+redeploy-fresh.sh
