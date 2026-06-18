@@ -313,7 +313,12 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
     // Amazon RDS for MySQL instance
     this.database = new rds.DatabaseInstance(this, 'CreditUnionDatabase', {
       engine: rds.DatabaseInstanceEngine.mysql({
-        version: rds.MysqlEngineVersion.VER_8_0_40
+        // AWS retires older MySQL minor versions over time. If deployment fails with
+        // "Cannot find version X for mysql", list currently available versions with:
+        //   aws rds describe-db-engine-versions --engine mysql \
+        //     --query "DBEngineVersions[?starts_with(EngineVersion,'8.0')].EngineVersion" --output text
+        // and update the version string below to an available one.
+        version: rds.MysqlEngineVersion.of('8.0.46', '8.0')
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       credentials: rds.Credentials.fromSecret(this.databaseSecret),

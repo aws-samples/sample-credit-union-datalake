@@ -74,12 +74,18 @@ export class CreditUnionTriggerStack extends cdk.Stack {
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['lambda:InvokeFunction'],
-          resources: [crawlerWaitFunction.functionArn]
+          // Use an interpolated ARN string (consistent with the other triggers above)
+          // rather than crawlerWaitFunction.functionArn. Referencing the same-stack
+          // function token here can leave the custom resource's IAM policy not yet in
+          // effect when it invokes, causing an AccessDenied on lambda:InvokeFunction.
+          resources: [`arn:aws:lambda:${this.region}:${this.account}:function:${crawlerWaitFunction.functionName}`]
         })
       ]),
       installLatestAwsSdk: false
     });
+    // Ensure the wait function (and its role/policy) exists before the invoke runs.
     waitForCrawlers.node.addDependency(crawlerTrigger);
+    waitForCrawlers.node.addDependency(crawlerWaitFunction);
 
     // Custom resource to trigger AWS Step Functions (after crawlers complete)
     // Input parameters are fixed values — not user-provided — to control execution mode
