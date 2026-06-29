@@ -92,7 +92,7 @@ describe('Infrastructure Stack', () => {
   });
 });
 
-describe('Infrastructure Stack — Secrets rotation (R2)', () => {
+describe('Infrastructure Stack — Secrets rotation', () => {
   const { infra } = buildStacks();
   const template = Template.fromStack(infra);
 
@@ -132,7 +132,7 @@ describe('Infrastructure Stack — Secrets rotation (R2)', () => {
   });
 });
 
-describe('Infrastructure Stack — S3 version-deletion deny (R3)', () => {
+describe('Infrastructure Stack — S3 version-deletion deny', () => {
   const { infra } = buildStacks();
   const template = Template.fromStack(infra);
 
@@ -206,7 +206,7 @@ describe('Infrastructure Stack — S3 version-deletion deny (R3)', () => {
     expect(targetedBuckets.some((b) => b.startsWith('ConsumeBucket'))).toBe(true);
   });
 
-  test('the access-logs and CloudTrail bucket policies carry NO version-deny statements (R3.4)', () => {
+  test('the access-logs and CloudTrail bucket policies carry NO version-deny statements', () => {
     const policies = template.findResources('AWS::S3::BucketPolicy');
 
     for (const res of Object.values(policies)) {
@@ -232,7 +232,7 @@ describe('Infrastructure Stack — S3 version-deletion deny (R3)', () => {
   });
 });
 
-describe('Infrastructure Stack — KMS deletion guard + EventBridge (R4)', () => {
+describe('Infrastructure Stack — KMS deletion guard + EventBridge', () => {
   const { infra } = buildStacks();
   const template = Template.fromStack(infra);
 
@@ -350,7 +350,7 @@ describe('Data Stack', () => {
   });
 });
 
-describe('Data Stack — Lake Formation column-level access (R1)', () => {
+describe('Data Stack — Lake Formation column-level access', () => {
   const { data } = buildStacks();
   const template = Template.fromStack(data);
 
@@ -531,13 +531,13 @@ describe('Trigger Stack', () => {
   });
 });
 
-describe('Code signing ENFORCE (R5)', () => {
+describe('Code signing ENFORCE', () => {
   // The three CodeSigningConfig resources are spread across two stacks:
   //   - Data stack: RDS data-loader CSC + crawler-trigger CSC (2)
   //   - Trigger stack: crawler-wait CSC (1)
   // The Infrastructure and ETL stacks carry none, and the signing provider
-  // Lambda (SignedLambdaArtifact) is intentionally NOT under a CSC (R5.4).
-  // App-wide there must be EXACTLY three CSCs, all 'Enforce', zero 'Warn' (R9.7).
+  // Lambda (SignedLambdaArtifact) is intentionally NOT under a CSC.
+  // App-wide there must be EXACTLY three CSCs, all 'Enforce', zero 'Warn'.
   const { infra, data, etl, trigger } = buildStacks();
 
   const infraTemplate = Template.fromStack(infra);
@@ -559,7 +559,7 @@ describe('Code signing ENFORCE (R5)', () => {
     return result;
   };
 
-  test('Infrastructure and ETL stacks carry NO CodeSigningConfig (signing provider is un-signed, R5.4)', () => {
+  test('Infrastructure and ETL stacks carry NO CodeSigningConfig (signing provider is un-signed)', () => {
     infraTemplate.resourceCountIs(CSC, 0);
     etlTemplate.resourceCountIs(CSC, 0);
   });
@@ -590,7 +590,7 @@ describe('Code signing ENFORCE (R5)', () => {
   });
 });
 
-describe('Infrastructure Stack — detective controls (R6, R7)', () => {
+describe('Infrastructure Stack — detective controls', () => {
   const { infra } = buildStacks();
   const template = Template.fromStack(infra);
 

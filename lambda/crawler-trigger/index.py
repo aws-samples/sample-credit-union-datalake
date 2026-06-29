@@ -3,7 +3,7 @@
 #
 # Crawler-trigger handler. Externalized from an inline Lambda definition
 # (lib/creditunion-data-stack.ts) so the deployment package can be signed by
-# AWS Signer under a code-signing config set to ENFORCE (Requirement R5).
+# AWS Signer under a code-signing config set to ENFORCE.
 #
 # The crawler names were previously token-interpolated into the inline source;
 # they are now passed in as environment variables (CREDIT_CARDS_CRAWLER,

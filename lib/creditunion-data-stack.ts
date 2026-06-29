@@ -84,9 +84,9 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // ==========================================================================
-    // AWS Lake Formation — location registration (R1.1, R1.5, R1.9)
+    // AWS Lake Formation — location registration
     // Implements column-level access controls as deployed CDK resources. Column
-    // grants (R1.2–R1.4, R1.8, R1.9) follow below.
+    // grants follow below.
     //
     // The data lake ADMINISTRATOR designation (CfnDataLakeSettings) lives in the
     // Infrastructure_Stack, which deploys first. PutDataLakeSettings is eventually
@@ -98,10 +98,10 @@ export class CreditUnionDataStack extends cdk.Stack {
     // ==========================================================================
 
     // CfnResource — register the consume and cleanse bucket locations in hybrid
-    // access mode (D3) using an EXPLICIT registration role (NOT the Lake Formation
+    // access mode using an EXPLICIT registration role (NOT the Lake Formation
     // service-linked role). The SLR path cannot deregister the *last* S3 location
     // without manually deleting the SLR, which wedges `cdk destroy` in DELETE_FAILED
-    // (violating the clean-teardown invariant, R1.6/R9.10). An explicit role
+    // (violating the clean-teardown invariant). An explicit role
     // deregisters cleanly. The role is assumed by Lake Formation to read/write the
     // registered data-lake buckets on behalf of LF-governed queries.
     const lfRegistrationRole = new iam.Role(this, 'LakeFormationRegistrationRole', {
@@ -280,7 +280,7 @@ export class CreditUnionDataStack extends cdk.Stack {
     // Column-level access control for the SSN/PII columns on this table is now
     // deployed in code via the AWS Lake Formation CfnPrincipalPermissions grants
     // below (analyst SELECT with ssn/ssn_last_4/ssn_last_4_key excluded), rather
-    // than as a post-deployment customer CLI step (R1.2–R1.5).
+    // than as a post-deployment customer CLI step.
     const memberProfileTable = new glue.CfnTable(this, 'MemberProfileTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.consumeDatabase.ref,
@@ -354,12 +354,12 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // ==========================================================================
-    // AWS Lake Formation — column-level permission grants (R1.2, R1.3, R1.4,
-    // R1.8, R1.9). These CfnPrincipalPermissions are ordered after the data lake
+    // AWS Lake Formation — column-level permission grants. These
+    // CfnPrincipalPermissions are ordered after the data lake
     // settings and the bucket-location registrations (settings → registration →
     // grants) and depend on the Glue tables they reference so the catalog
     // objects exist before the grants are applied. On destroy, CloudFormation
-    // removes the grants before deregistering the locations (R1.6).
+    // removes the grants before deregistering the locations.
     // ==========================================================================
 
     // Analyst SELECT with the SSN-bearing columns excluded on
@@ -386,7 +386,7 @@ export class CreditUnionDataStack extends cdk.Stack {
     analystMemberProfileGrant.node.addDependency(this.consumeBucketRegistration);
     analystMemberProfileGrant.node.addDependency(memberProfileTable);
 
-    // Analyst SELECT with 'ssn' excluded on creditunion_cleanse.core_banking_members (R1.9).
+    // Analyst SELECT with 'ssn' excluded on creditunion_cleanse.core_banking_members.
     const analystCoreBankingGrant = new lakeformation.CfnPrincipalPermissions(this, 'AnalystCoreBankingMembersGrant', {
       principal: { dataLakePrincipalIdentifier: props.dataAnalystRole.roleArn },
       resource: {
@@ -403,7 +403,7 @@ export class CreditUnionDataStack extends cdk.Stack {
     analystCoreBankingGrant.node.addDependency(this.cleanseBucketRegistration);
     analystCoreBankingGrant.node.addDependency(coreBankingMembersTable);
 
-    // Analyst SELECT with 'ssn_last_4' excluded on creditunion_cleanse.loan_system_members (R1.9).
+    // Analyst SELECT with 'ssn_last_4' excluded on creditunion_cleanse.loan_system_members.
     const analystLoanSystemGrant = new lakeformation.CfnPrincipalPermissions(this, 'AnalystLoanSystemMembersGrant', {
       principal: { dataLakePrincipalIdentifier: props.dataAnalystRole.roleArn },
       resource: {
@@ -422,7 +422,7 @@ export class CreditUnionDataStack extends cdk.Stack {
 
     // Full SELECT (all columns) for the ETL_Writer_Role (per-job Glue role that writes
     // data-lake objects) and the Break_Glass_Role, so pipeline processing and emergency
-    // access retain all columns including the SSN columns (R1.8). A `table` resource
+    // access retain all columns including the SSN columns. A `table` resource
     // (no column wildcard) grants access to every column.
     const fullAccessTables: Array<{ id: string; databaseName: string; name: string; table: glue.CfnTable; registration: lakeformation.CfnResource }> = [
       { id: 'MemberProfile', databaseName: 'creditunion_consume', name: 'member_profile', table: memberProfileTable, registration: this.consumeBucketRegistration },

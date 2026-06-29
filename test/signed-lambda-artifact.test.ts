@@ -53,7 +53,7 @@ describe('SignedLambdaArtifact', () => {
     template.resourceCountIs('Custom::SignedLambdaArtifact', 1);
   });
 
-  test('provider Lambda is NOT under a CodeSigningConfig (R5.4)', () => {
+  test('provider Lambda is NOT under a CodeSigningConfig', () => {
     const { template } = buildConstruct();
     // The construct must add zero CodeSigningConfig resources: the signing
     // provider is CDK-internal tooling and stays unsigned so the full template

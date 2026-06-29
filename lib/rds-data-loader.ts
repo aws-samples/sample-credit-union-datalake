@@ -90,7 +90,7 @@ export class RdsDataLoader extends Construct {
       }
     );
 
-    // D1: code signing under ENFORCE requires every layer on the function to also be
+    // Code signing under ENFORCE requires every layer on the function to also be
     // signed by an allowed profile. Sign the pymysql layer through the same flow and
     // publish the LayerVersion from the signed object.
     const signedLayer = new SignedLambdaArtifact(this, 'PymysqlLayerArtifact', {

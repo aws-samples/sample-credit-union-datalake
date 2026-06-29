@@ -3,7 +3,7 @@
 #
 # Amazon RDS data-loader handler. Externalized from an inline Lambda definition
 # (lib/rds-data-loader.ts) so the deployment package can be signed by AWS Signer
-# under a code-signing config set to ENFORCE (Requirement R5).
+# under a code-signing config set to ENFORCE.
 import json
 import boto3
 from botocore.config import Config

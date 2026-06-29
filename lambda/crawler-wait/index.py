@@ -3,7 +3,7 @@
 #
 # Crawler-wait handler. Externalized from an inline Lambda definition
 # (lib/creditunion-trigger-stack.ts) so the deployment package can be signed by
-# AWS Signer under a code-signing config set to ENFORCE (Requirement R5).
+# AWS Signer under a code-signing config set to ENFORCE.
 #
 # The crawler names are static (no token interpolation needed), so the handler
 # body is moved here verbatim.
