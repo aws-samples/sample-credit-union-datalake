@@ -6,13 +6,27 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
 import * as signer from 'aws-cdk-lib/aws-signer';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as kms from 'aws-cdk-lib/aws-kms';
+import * as path from 'path';
 import { NagSuppressions } from 'cdk-nag';
+import { SignedLambdaArtifact } from './signed-lambda-artifact';
 import { Construct } from 'constructs';
 
 interface CreditUnionTriggerStackProps extends cdk.StackProps {
   rdsLambdaFunctionName: string;
   crawlerLambdaFunctionName: string;
   stepFunctionArn: string;
+  /**
+   * Customer-managed KMS key (from the infrastructure stack) used to encrypt the
+   * signing artifacts bucket for the crawler-wait Lambda.
+   */
+  kmsKey: kms.IKey;
+  /**
+   * S3 server-access-logs bucket (from the infrastructure stack) used for the
+   * signing artifacts bucket so it does not raise an AwsSolutions-S1 finding.
+   */
+  accessLogsBucket: s3.IBucket;
 }
 
 export class CreditUnionTriggerStack extends cdk.Stack {
@@ -60,7 +74,7 @@ export class CreditUnionTriggerStack extends cdk.Stack {
     });
 
     // Wait for AWS Glue crawlers to complete before triggering Step Function
-    const crawlerWaitFunction = this.createCrawlerWaitFunction();
+    const crawlerWaitFunction = this.createCrawlerWaitFunction(props);
     const waitForCrawlers = new cr.AwsCustomResource(this, 'WaitForCrawlers', {
       onCreate: {
         service: 'Lambda',
@@ -74,11 +88,16 @@ export class CreditUnionTriggerStack extends cdk.Stack {
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['lambda:InvokeFunction'],
-          // Use an interpolated ARN string (consistent with the other triggers above)
-          // rather than crawlerWaitFunction.functionArn. Referencing the same-stack
-          // function token here can leave the custom resource's IAM policy not yet in
-          // effect when it invokes, causing an AccessDenied on lambda:InvokeFunction.
-          resources: [`arn:aws:lambda:${this.region}:${this.account}:function:${crawlerWaitFunction.functionName}`]
+          // Grant invoke on both the unqualified function ARN and the version/alias
+          // qualified form (`:*`). The AWS SDK v3 Lambda `invoke` path can be
+          // authorized against the qualified ARN, so granting only the unqualified
+          // name leaves the shared custom-resource provider role unauthorized
+          // (AccessDenied on lambda:InvokeFunction). functionArn is the canonical
+          // attribute and creates the correct dependency on the function.
+          resources: [
+            crawlerWaitFunction.functionArn,
+            `${crawlerWaitFunction.functionArn}:*`
+          ]
         })
       ]),
       installLatestAwsSdk: false
@@ -86,6 +105,9 @@ export class CreditUnionTriggerStack extends cdk.Stack {
     // Ensure the wait function (and its role/policy) exists before the invoke runs.
     waitForCrawlers.node.addDependency(crawlerTrigger);
     waitForCrawlers.node.addDependency(crawlerWaitFunction);
+    // Belt-and-suspenders: also grant invoke via the function's own grant helper so
+    // the permission and resource dependency are established the canonical way.
+    crawlerWaitFunction.grantInvoke(waitForCrawlers);
 
     // Custom resource to trigger AWS Step Functions (after crawlers complete)
     // Input parameters are fixed values — not user-provided — to control execution mode
@@ -145,9 +167,24 @@ export class CreditUnionTriggerStack extends cdk.Stack {
         appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
       }
     ]);
+
+    // The WaitForCrawlers custom resource must invoke the crawler-wait Lambda. The
+    // grant covers the unqualified function ARN and its version/alias-qualified form
+    // (`<CrawlerWaitFunction.Arn>:*`), which is the canonical lambda:InvokeFunction
+    // grant. The wildcard is scoped to versions/aliases of that single function only.
+    NagSuppressions.addResourceSuppressionsByPath(this, [
+      `/${this.stackName}/AWS679f53fac002430cb0da5b7982bd2287/ServiceRole/DefaultPolicy/Resource`,
+      `/${this.stackName}/WaitForCrawlers/CustomResourcePolicy/Resource`
+    ], [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'lambda:InvokeFunction is scoped to the crawler-wait function ARN and its version/alias-qualified form (:*); the AWS SDK v3 Lambda invoke path can authorize against the qualified ARN, so both are granted. The wildcard applies only to versions/aliases of that single function.',
+        appliesTo: [{ regex: '/^Resource::<CrawlerWaitFunction.*\\.Arn>:\\*$/g' }]
+      }
+    ], true);
   }
 
-  private createCrawlerWaitFunction(): lambda.Function {
+  private createCrawlerWaitFunction(props: CreditUnionTriggerStackProps): lambda.Function {
     const waitSigningProfile = new signer.SigningProfile(this, 'WaitFnSigningProfile', {
       platform: signer.Platform.AWS_LAMBDA_SHA384_ECDSA,
       signatureValidity: cdk.Duration.days(365),
@@ -155,63 +192,40 @@ export class CreditUnionTriggerStack extends cdk.Stack {
 
     const waitCodeSigningConfig = new lambda.CodeSigningConfig(this, 'WaitFnCodeSigningConfig', {
       signingProfiles: [waitSigningProfile],
-      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.ENFORCE,
+    });
+
+    // Versioned, KMS-encrypted artifacts bucket used as the AWS Signer source/destination
+    // for the crawler-wait handler. Reuses the data-lake customer-managed key and the
+    // infrastructure access-logs bucket (avoids AwsSolutions-S1 on the artifacts bucket).
+    const waitArtifactsBucket = SignedLambdaArtifact.createArtifactsBucket(
+      this,
+      'WaitSigningArtifactsBucket',
+      props.kmsKey,
+      {
+        serverAccessLogsBucket: props.accessLogsBucket,
+        serverAccessLogsPrefix: 'crawler-wait-signing/',
+      }
+    );
+
+    // Sign the externalized handler asset (lambda/crawler-wait/index.py).
+    const signedWaitHandler = new SignedLambdaArtifact(this, 'WaitHandlerArtifact', {
+      artifactsBucket: waitArtifactsBucket,
+      signingProfile: waitSigningProfile,
+      assetPath: path.join(__dirname, '..', 'lambda', 'crawler-wait'),
     });
 
     const waitFunction = new lambda.Function(this, 'CrawlerWaitFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
       codeSigningConfig: waitCodeSigningConfig,
-      code: lambda.Code.fromInline(`
-import boto3
-import time
-import json
-
-def handler(event, context):
-    glue = boto3.client('glue')
-    crawlers = ['creditunion-crm-xml-crawler', 'creditunion-creditcards-xml-crawler']
-    
-    print("Waiting for crawlers to complete...")
-    max_wait = 600  # 10 minutes max
-    wait_time = 0
-    
-    while wait_time < max_wait:
-        all_complete = True
-        
-        for crawler_name in crawlers:
-            try:
-                response = glue.get_crawler(Name=crawler_name)
-                state = response['Crawler']['State']
-                print(f"Crawler {crawler_name} state: {state}")
-                
-                if state in ['RUNNING']:
-                    all_complete = False
-                    break
-            except Exception as e:
-                print(f"Error checking crawler {crawler_name}: {e}")
-                all_complete = False
-                break
-        
-        if all_complete:
-            print("All crawlers completed!")
-            return {
-                'statusCode': 200,
-                'body': json.dumps('All crawlers completed')
-            }
-        
-        print("Crawlers still running, waiting 30 seconds...")
-        time.sleep(30)
-        wait_time += 30
-    
-    print("Timeout waiting for crawlers, proceeding anyway...")
-    return {
-        'statusCode': 200,
-        'body': json.dumps('Timeout reached, proceeding')
-    }
-      `),
+      code: signedWaitHandler.signedCode,
       timeout: cdk.Duration.minutes(12),
       memorySize: 128
     });
+
+    // Ensure the signed object exists before the function is created/updated.
+    waitFunction.node.addDependency(signedWaitHandler);
 
     // Add AWS Glue permissions — scoped to specific crawlers
     waitFunction.addToRolePolicy(new iam.PolicyStatement({

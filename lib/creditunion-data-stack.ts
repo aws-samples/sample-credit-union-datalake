@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import * as cdk from 'aws-cdk-lib';
 import * as glue from 'aws-cdk-lib/aws-glue';
+import * as lakeformation from 'aws-cdk-lib/aws-lakeformation';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -9,21 +10,29 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as signer from 'aws-cdk-lib/aws-signer';
+import * as path from 'path';
 import { NagSuppressions } from 'cdk-nag';
 import { RdsDataLoader } from './rds-data-loader';
+import { SignedLambdaArtifact } from './signed-lambda-artifact';
 import { Construct } from 'constructs';
 
 interface CreditUnionDataStackProps extends cdk.StackProps {
   collectBucket: s3.Bucket;
   cleanseBucket: s3.Bucket;
   consumeBucket: s3.Bucket;
+  accessLogsBucket: s3.Bucket;
   glueRoleMysql: iam.Role;
+  glueRoleXml: iam.Role;
+  glueRoleCsv: iam.Role;
+  glueRoleMember360: iam.Role;
   glueSecurityGroup: ec2.SecurityGroup;
   database: rds.DatabaseInstance;
   databaseSecret: secretsmanager.Secret;
   databaseSecurityGroup: ec2.SecurityGroup;
   vpc: ec2.Vpc;
   secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
+  breakGlassRole: iam.Role;
+  dataAnalystRole: iam.Role;
 }
 
 export class CreditUnionDataStack extends cdk.Stack {
@@ -33,6 +42,8 @@ export class CreditUnionDataStack extends cdk.Stack {
   public readonly xmlCatalogDatabase: glue.CfnDatabase;
   public readonly rdsDataLoader: RdsDataLoader;
   public readonly crawlerTriggerFunction: lambda.Function;
+  public readonly consumeBucketRegistration: lakeformation.CfnResource;
+  public readonly cleanseBucketRegistration: lakeformation.CfnResource;
 
   constructor(scope: Construct, id: string, props: CreditUnionDataStackProps) {
     super(scope, id, props);
@@ -43,7 +54,8 @@ export class CreditUnionDataStack extends cdk.Stack {
       database: props.database,
       databaseSecret: props.databaseSecret,
       collectBucket: props.collectBucket,
-      secretsManagerEndpoint: props.secretsManagerEndpoint
+      secretsManagerEndpoint: props.secretsManagerEndpoint,
+      accessLogsBucket: props.accessLogsBucket
     });
 
     // AWS Glue databases
@@ -71,6 +83,63 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
+    // ==========================================================================
+    // AWS Lake Formation — location registration
+    // Implements column-level access controls as deployed CDK resources. Column
+    // grants follow below.
+    //
+    // The data lake ADMINISTRATOR designation (CfnDataLakeSettings) lives in the
+    // Infrastructure_Stack, which deploys first. PutDataLakeSettings is eventually
+    // consistent; designating the admin in the same CloudFormation operation as
+    // these registrations/grants races propagation and fails with AccessDenied.
+    // Because the Infrastructure_Stack fully completes before this stack's
+    // changeset runs (Data depends on Infra via props), the admin is already
+    // propagated here, so no intra-stack dependency on the settings is needed.
+    // ==========================================================================
+
+    // CfnResource — register the consume and cleanse bucket locations in hybrid
+    // access mode using an EXPLICIT registration role (NOT the Lake Formation
+    // service-linked role). The SLR path cannot deregister the *last* S3 location
+    // without manually deleting the SLR, which wedges `cdk destroy` in DELETE_FAILED
+    // (violating the clean-teardown invariant). An explicit role
+    // deregisters cleanly. The role is assumed by Lake Formation to read/write the
+    // registered data-lake buckets on behalf of LF-governed queries.
+    const lfRegistrationRole = new iam.Role(this, 'LakeFormationRegistrationRole', {
+      roleName: `creditunion-${cdk.Aws.REGION}-lf-registration`,
+      assumedBy: new iam.ServicePrincipal('lakeformation.amazonaws.com'),
+      description: 'Role Lake Formation assumes to access registered CUDL data-lake S3 locations'
+    });
+    props.consumeBucket.grantReadWrite(lfRegistrationRole);
+    props.cleanseBucket.grantReadWrite(lfRegistrationRole);
+
+    this.consumeBucketRegistration = new lakeformation.CfnResource(this, 'ConsumeBucketLFRegistration', {
+      resourceArn: props.consumeBucket.bucketArn,
+      useServiceLinkedRole: false,
+      roleArn: lfRegistrationRole.roleArn,
+      hybridAccessEnabled: true
+    });
+    this.consumeBucketRegistration.node.addDependency(lfRegistrationRole);
+
+    this.cleanseBucketRegistration = new lakeformation.CfnResource(this, 'CleanseBucketLFRegistration', {
+      resourceArn: props.cleanseBucket.bucketArn,
+      useServiceLinkedRole: false,
+      roleArn: lfRegistrationRole.roleArn,
+      hybridAccessEnabled: true
+    });
+    this.cleanseBucketRegistration.node.addDependency(lfRegistrationRole);
+
+    // The registration role's read/write access to the (KMS-encrypted) data-lake
+    // buckets is granted via bucket.grantReadWrite, which emits the object-level
+    // S3 wildcards and the corresponding KMS wildcards LF needs to broker access.
+    NagSuppressions.addResourceSuppressions(lfRegistrationRole, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Lake Formation data-location registration role: object-level read/write on the consume and cleanse data-lake buckets (and the corresponding KMS data-key actions) is required for Lake Formation to broker access to LF-governed locations. Wildcards are scoped to those specific bucket ARNs and the data-lake CMK. See docs/security-exceptions.md.'
+      }
+    ], true);
+
+
+
     // AWS Glue connection for MySQL
     this.glueConnection = new glue.CfnConnection(this, 'MySQLConnection', {
       catalogId: cdk.Aws.ACCOUNT_ID,
@@ -92,7 +161,7 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Core Banking Members Table (Cleanse)
-    new glue.CfnTable(this, 'CoreBankingMembersTable', {
+    const coreBankingMembersTable = new glue.CfnTable(this, 'CoreBankingMembersTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.cleanseDatabase.ref,
       tableInput: {
@@ -169,7 +238,7 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Loan System Members Table (Cleanse)
-    new glue.CfnTable(this, 'LoanSystemMembersTable', {
+    const loanSystemMembersTable = new glue.CfnTable(this, 'LoanSystemMembersTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.cleanseDatabase.ref,
       tableInput: {
@@ -208,16 +277,11 @@ export class CreditUnionDataStack extends cdk.Stack {
     });
 
     // Member Profile Table (Consume)
-    // Post-deployment: Configure AWS Lake Formation for column-level access controls.
-    // Priority: HIGH | Risk reduction: Prevents unauthorized access to SSN and PII columns
-    // Steps:
-    //   1. aws lakeformation register-resource --resource-arn <consume-bucket-arn>
-    //   2. aws lakeformation grant-permissions --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::ACCOUNT:role/analyst-role"}' \
-    //        --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
-    //        --permissions SELECT
-    //   3. Verify: aws lakeformation get-effective-permissions-for-path --resource-arn <consume-bucket-arn>
-    // See the Customer responsibilities section in README.md for details.
-    new glue.CfnTable(this, 'MemberProfileTable', {
+    // Column-level access control for the SSN/PII columns on this table is now
+    // deployed in code via the AWS Lake Formation CfnPrincipalPermissions grants
+    // below (analyst SELECT with ssn/ssn_last_4/ssn_last_4_key excluded), rather
+    // than as a post-deployment customer CLI step.
+    const memberProfileTable = new glue.CfnTable(this, 'MemberProfileTable', {
       catalogId: cdk.Aws.ACCOUNT_ID,
       databaseName: this.consumeDatabase.ref,
       tableInput: {
@@ -289,6 +353,149 @@ export class CreditUnionDataStack extends cdk.Stack {
       }
     });
 
+    // ==========================================================================
+    // AWS Lake Formation — column-level permission grants. These
+    // CfnPrincipalPermissions are ordered after the data lake
+    // settings and the bucket-location registrations (settings → registration →
+    // grants) and depend on the Glue tables they reference so the catalog
+    // objects exist before the grants are applied. On destroy, CloudFormation
+    // removes the grants before deregistering the locations.
+    // ==========================================================================
+
+    // Analyst SELECT with the SSN-bearing columns excluded on
+    // creditunion_consume.member_profile. The consume-zone golden record stores
+    // only TOKENIZED SSN — the columns `ssn_last_4` and `ssn_last_4_key` — and has
+    // no full `ssn` column. Lake Formation validates ExcludedColumnNames against
+    // the actual table schema and rejects the grant ("Resource does not exist") if
+    // any named column is absent, so the exclusion set MUST match real columns.
+    // (The earlier ['ssn','ssn_last_4','ssn_last_4_key'] set included a non-existent
+    // 'ssn' column and failed to deploy.)
+    const analystMemberProfileGrant = new lakeformation.CfnPrincipalPermissions(this, 'AnalystMemberProfileGrant', {
+      principal: { dataLakePrincipalIdentifier: props.dataAnalystRole.roleArn },
+      resource: {
+        tableWithColumns: {
+          catalogId: this.account,
+          databaseName: 'creditunion_consume',
+          name: 'member_profile',
+          columnWildcard: { excludedColumnNames: ['ssn_last_4', 'ssn_last_4_key'] }
+        }
+      },
+      permissions: ['SELECT'],
+      permissionsWithGrantOption: []
+    });
+    analystMemberProfileGrant.node.addDependency(this.consumeBucketRegistration);
+    analystMemberProfileGrant.node.addDependency(memberProfileTable);
+
+    // Analyst SELECT with 'ssn' excluded on creditunion_cleanse.core_banking_members.
+    const analystCoreBankingGrant = new lakeformation.CfnPrincipalPermissions(this, 'AnalystCoreBankingMembersGrant', {
+      principal: { dataLakePrincipalIdentifier: props.dataAnalystRole.roleArn },
+      resource: {
+        tableWithColumns: {
+          catalogId: this.account,
+          databaseName: 'creditunion_cleanse',
+          name: 'core_banking_members',
+          columnWildcard: { excludedColumnNames: ['ssn'] }
+        }
+      },
+      permissions: ['SELECT'],
+      permissionsWithGrantOption: []
+    });
+    analystCoreBankingGrant.node.addDependency(this.cleanseBucketRegistration);
+    analystCoreBankingGrant.node.addDependency(coreBankingMembersTable);
+
+    // Analyst SELECT with 'ssn_last_4' excluded on creditunion_cleanse.loan_system_members.
+    const analystLoanSystemGrant = new lakeformation.CfnPrincipalPermissions(this, 'AnalystLoanSystemMembersGrant', {
+      principal: { dataLakePrincipalIdentifier: props.dataAnalystRole.roleArn },
+      resource: {
+        tableWithColumns: {
+          catalogId: this.account,
+          databaseName: 'creditunion_cleanse',
+          name: 'loan_system_members',
+          columnWildcard: { excludedColumnNames: ['ssn_last_4'] }
+        }
+      },
+      permissions: ['SELECT'],
+      permissionsWithGrantOption: []
+    });
+    analystLoanSystemGrant.node.addDependency(this.cleanseBucketRegistration);
+    analystLoanSystemGrant.node.addDependency(loanSystemMembersTable);
+
+    // Full SELECT (all columns) for the ETL_Writer_Role (per-job Glue role that writes
+    // data-lake objects) and the Break_Glass_Role, so pipeline processing and emergency
+    // access retain all columns including the SSN columns. A `table` resource
+    // (no column wildcard) grants access to every column.
+    const fullAccessTables: Array<{ id: string; databaseName: string; name: string; table: glue.CfnTable; registration: lakeformation.CfnResource }> = [
+      { id: 'MemberProfile', databaseName: 'creditunion_consume', name: 'member_profile', table: memberProfileTable, registration: this.consumeBucketRegistration },
+      { id: 'CoreBankingMembers', databaseName: 'creditunion_cleanse', name: 'core_banking_members', table: coreBankingMembersTable, registration: this.cleanseBucketRegistration },
+      { id: 'LoanSystemMembers', databaseName: 'creditunion_cleanse', name: 'loan_system_members', table: loanSystemMembersTable, registration: this.cleanseBucketRegistration }
+    ];
+
+    const fullAccessPrincipals: Array<{ id: string; arn: string }> = [
+      { id: 'EtlWriter', arn: props.glueRoleMysql.roleArn },
+      { id: 'BreakGlass', arn: props.breakGlassRole.roleArn }
+    ];
+
+    for (const principal of fullAccessPrincipals) {
+      for (const target of fullAccessTables) {
+        const grant = new lakeformation.CfnPrincipalPermissions(this, `${principal.id}${target.id}FullSelectGrant`, {
+          principal: { dataLakePrincipalIdentifier: principal.arn },
+          resource: {
+            table: {
+              catalogId: this.account,
+              databaseName: target.databaseName,
+              name: target.name
+            }
+          },
+          permissions: ['SELECT'],
+          permissionsWithGrantOption: []
+        });
+        grant.node.addDependency(target.registration);
+        grant.node.addDependency(target.table);
+      }
+    }
+
+    // ==========================================================================
+    // AWS Lake Formation — DATA_LOCATION_ACCESS for the ETL writer roles.
+    //
+    // Registering the cleanse and consume buckets with Lake Formation means LF
+    // brokers ALL access to those locations. DATA_LOCATION_ACCESS is the one LF
+    // permission the default IAMAllowedPrincipals fallback never covers, so any
+    // per-job Glue role that WRITES data to a registered location (a Glue Studio
+    // getSink(path="s3://<bucket>/...", connection_type="s3").writeFrame, incl.
+    // enableUpdateCatalog catalog writes) must hold it explicitly. Without it the
+    // job fails with "Insufficient Lake Formation permission(s) on s3://...".
+    //
+    // Table READS continue to resolve through IAMAllowedPrincipals (the per-job
+    // roles carry IAM S3/KMS access), and the analyst column controls are
+    // unaffected: the data-analyst role has NO IAM data access and relies solely
+    // on its column-excluded SELECT grant, so this does not widen analyst access.
+    //
+    // Data flow (see per-job role comments in the Infrastructure_Stack):
+    //   - mysql / xml / csv jobs write to the CLEANSE location
+    //   - member360 job writes to the CONSUME location
+    // ==========================================================================
+    const dataLocationGrants: Array<{ id: string; roleArn: string; bucketArn: string; registration: lakeformation.CfnResource }> = [
+      { id: 'MysqlCleanseLocation', roleArn: props.glueRoleMysql.roleArn, bucketArn: props.cleanseBucket.bucketArn, registration: this.cleanseBucketRegistration },
+      { id: 'XmlCleanseLocation', roleArn: props.glueRoleXml.roleArn, bucketArn: props.cleanseBucket.bucketArn, registration: this.cleanseBucketRegistration },
+      { id: 'CsvCleanseLocation', roleArn: props.glueRoleCsv.roleArn, bucketArn: props.cleanseBucket.bucketArn, registration: this.cleanseBucketRegistration },
+      { id: 'Member360ConsumeLocation', roleArn: props.glueRoleMember360.roleArn, bucketArn: props.consumeBucket.bucketArn, registration: this.consumeBucketRegistration }
+    ];
+
+    for (const grant of dataLocationGrants) {
+      const locationGrant = new lakeformation.CfnPrincipalPermissions(this, `${grant.id}Grant`, {
+        principal: { dataLakePrincipalIdentifier: grant.roleArn },
+        resource: {
+          dataLocation: {
+            catalogId: this.account,
+            resourceArn: grant.bucketArn
+          }
+        },
+        permissions: ['DATA_LOCATION_ACCESS'],
+        permissionsWithGrantOption: []
+      });
+      locationGrant.node.addDependency(grant.registration);
+    }
+
     // AWS Glue XML crawlers for Credit Cards and CRM
     // Note: AWSGlueServiceRole managed policy is required by AWS Glue crawlers.
     // Approved security exception: see docs/security-exceptions.md Exception 2.
@@ -359,34 +566,46 @@ export class CreditUnionDataStack extends cdk.Stack {
 
     const crawlerCodeSigningConfig = new lambda.CodeSigningConfig(this, 'CrawlerCodeSigningConfig', {
       signingProfiles: [crawlerSigningProfile],
-      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.WARN,
+      untrustedArtifactOnDeployment: lambda.UntrustedArtifactOnDeployment.ENFORCE,
     });
 
-    // AWS Lambda function to trigger crawlers
+    // Versioned, KMS-encrypted artifacts bucket used as the AWS Signer source/destination
+    // for the crawler-trigger handler. Reuses the data-lake customer-managed key and the
+    // infrastructure access-logs bucket (avoids AwsSolutions-S1 on the artifacts bucket).
+    const crawlerArtifactsBucket = SignedLambdaArtifact.createArtifactsBucket(
+      this,
+      'CrawlerSigningArtifactsBucket',
+      props.collectBucket.encryptionKey!,
+      {
+        serverAccessLogsBucket: props.accessLogsBucket,
+        serverAccessLogsPrefix: 'crawler-trigger-signing/',
+      }
+    );
+
+    // Sign the externalized handler asset (lambda/crawler-trigger/index.py).
+    const signedCrawlerHandler = new SignedLambdaArtifact(this, 'CrawlerHandlerArtifact', {
+      artifactsBucket: crawlerArtifactsBucket,
+      signingProfile: crawlerSigningProfile,
+      assetPath: path.join(__dirname, '..', 'lambda', 'crawler-trigger'),
+    });
+
+    // AWS Lambda function to trigger crawlers. The crawler names were previously
+    // token-interpolated into the inline source; they are now passed as environment
+    // variables so the signed asset file (lambda/crawler-trigger/index.py) is static.
     this.crawlerTriggerFunction = new lambda.Function(this, 'CrawlerTriggerFunction', {
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'index.handler',
       codeSigningConfig: crawlerCodeSigningConfig,
-      code: lambda.Code.fromInline(`
-import boto3
-import json
-
-def handler(event, context):
-    glue = boto3.client('glue')
-    
-    crawlers = ['${creditCardsCrawlerResource.ref}', '${crmCrawlerResource.ref}']
-    
-    for crawler_name in crawlers:
-        try:
-            glue.start_crawler(Name=crawler_name)
-            print(f'Started crawler: {crawler_name}')
-        except Exception as e:
-            print(f'Error starting crawler {crawler_name}: {str(e)}')
-    
-    return {'statusCode': 200, 'body': json.dumps('Crawlers triggered')}
-`),
+      code: signedCrawlerHandler.signedCode,
+      environment: {
+        CREDIT_CARDS_CRAWLER: creditCardsCrawlerResource.ref,
+        CRM_CRAWLER: crmCrawlerResource.ref
+      },
       timeout: cdk.Duration.minutes(5)
     });
+
+    // Ensure the signed object exists before the function is created/updated.
+    this.crawlerTriggerFunction.node.addDependency(signedCrawlerHandler);
 
     this.crawlerTriggerFunction.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
@@ -396,10 +615,6 @@ def handler(event, context):
         `arn:aws:glue:${this.region}:${this.account}:crawler/${crmCrawlerResource.ref}`
       ]
     }));
-
-    // Custom resource to trigger crawlers on deployment
-    // Note: Crawlers can be manually triggered after deployment
-    // aws lambda invoke --function-name [function-name] --region us-west-2 /tmp/response.json
 
     // Outputs
     new cdk.CfnOutput(this, 'GlueConnectionName', {
@@ -442,7 +657,7 @@ def handler(event, context):
       {
         id: 'AwsSolutions-IAM5',
         reason: 'Object-level read access within the scoped collect bucket is required for crawler operation.',
-        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+        appliesTo: [{ regex: '/^Resource::.*CollectBucket.*Arn.*\\/\\*$/g' }]
       }
     ], true);
 
@@ -458,7 +673,7 @@ def handler(event, context):
       {
         id: 'AwsSolutions-IAM5',
         reason: 'Object-level access to collect bucket is required for uploading loaded data.',
-        appliesTo: ['Resource::<CollectBucket1C9CFA0A.Arn>/*']
+        appliesTo: [{ regex: '/^Resource::.*CollectBucket.*Arn.*\\/\\*$/g' }]
       }
     ]);
 
