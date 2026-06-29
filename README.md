@@ -90,13 +90,13 @@ The following controls are deployed by this project as a baseline. Customers sho
 - **[M5]** AWS Lambda code signing via AWS Signer in ENFORCE mode on the three target Lambda functions (RDS data loader, crawler-trigger, crawler-wait)
 - AWS Glue job concurrency limits to prevent resource exhaustion
 
-> **Previously customer responsibilities, now deployed:** AWS Lake Formation column-level access (formerly P0, now **M1**), AWS Secrets Manager 30-day rotation (formerly P5, now **M2**), Amazon CloudWatch alarms (formerly P3, now **M6**), and AWS Config security-group/network rules (formerly P1, now **M7**) are deployed by this project. See "Implemented security controls" above. The two items below remain customer responsibilities because they cannot be configured through AWS CDK.
+> **Previously customer responsibilities, now deployed:** AWS Lake Formation column-level access (**M1**), AWS Secrets Manager 30-day rotation (**M2**), Amazon CloudWatch alarms (**M6**), and AWS Config security-group/network rules (**M7**) are deployed by this project. See "Implemented security controls" above. The two items below remain customer responsibilities because they cannot be configured through AWS CDK.
 
 ### Customer responsibilities (post-deployment)
 
 Customers should complete the following security actions before using this solution with production data. These two controls cannot be configured by AWS CDK and remain the customer's ongoing responsibility:
 
-1. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK. The deployment already denies object-version deletion and versioning changes on these buckets (M3); MFA Delete is the residual exception documented under model assumption A007.
+1. **Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK. The deployment already denies object-version deletion and versioning changes on these buckets (M3); MFA Delete is the residual exception documented in the [Security Exceptions register](docs/security-exceptions.md) (Exception 4).
 
    ```bash
    aws s3api put-bucket-versioning \
@@ -105,7 +105,7 @@ Customers should complete the following security actions before using this solut
      --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP_CODE"
    ```
 
-2. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
+2. **Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
 
    ```bash
    aws iam list-attached-role-policies --role-name creditunion-REGION-glue-mysql
@@ -243,7 +243,7 @@ GROUP BY 1 ORDER BY members DESC;
 
 ## Cost estimate
 
-Single deployment + pipeline run (us-west-2):
+Single deployment + pipeline run (approximate, single region):
 
 | Service | Estimated cost |
 |---|---|

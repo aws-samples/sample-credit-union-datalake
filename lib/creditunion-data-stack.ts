@@ -616,10 +616,6 @@ export class CreditUnionDataStack extends cdk.Stack {
       ]
     }));
 
-    // Custom resource to trigger crawlers on deployment
-    // Note: Crawlers can be manually triggered after deployment
-    // aws lambda invoke --function-name [function-name] --region us-west-2 /tmp/response.json
-
     // Outputs
     new cdk.CfnOutput(this, 'GlueConnectionName', {
       value: this.glueConnection.ref,

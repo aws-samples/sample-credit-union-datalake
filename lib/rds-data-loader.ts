@@ -146,8 +146,5 @@ export class RdsDataLoader extends Construct {
 
     // AWS Lambda depends on AWS Secrets Manager VPC endpoint being ready
     this.lambda.node.addDependency(props.secretsManagerEndpoint);
-
-    // Note: Lambda can be manually triggered after deployment
-    // aws lambda invoke --function-name [function-name] --region us-west-2 /tmp/response.json
   }
 }
