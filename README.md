@@ -71,43 +71,29 @@ Customers are responsible for configuring and maintaining these controls for the
 The following controls are deployed by this project as a baseline. Customers should review, validate, and customize these for their specific security and compliance requirements before production use:
 
 - Customer-managed AWS KMS key with auto-rotation for Amazon S3 bucket and Amazon RDS encryption at rest
+- **[M4]** AWS KMS key deletion guard — key-policy denies on `kms:ScheduleKeyDeletion` and `kms:DisableKey` (break-glass admin only) with an Amazon EventBridge rule monitoring those API calls
 - Amazon Relational Database Service (Amazon RDS) deployed in isolated subnets with no internet access
 - Amazon VPC endpoints for Amazon S3 and AWS Secrets Manager (no public internet traffic)
 - Amazon S3 public access blocked, TLS enforced, versioning enabled, server access logging enabled
+- **[M3]** Amazon S3 version-deletion and versioning-change deny policies on the collect, cleanse, and consume buckets (break-glass admin only); MFA Delete remains a documented customer action (see below)
+- **[M1]** AWS Lake Formation column-level access controls excluding the SSN columns from the default SELECT grant for the data-analyst role: the consume `member_profile` table excludes `ssn_last_4` and `ssn_last_4_key` (the consume golden record stores only tokenized SSN and has no full `ssn` column), the cleanse `core_banking_members` table excludes `ssn`, and the cleanse `loan_system_members` table excludes `ssn_last_4`
 - Per-job AWS IAM roles with least-privilege policies for AWS Glue, AWS Lambda, and AWS Step Functions
 - Amazon Relational Database Service (Amazon RDS) credentials auto-generated in AWS Secrets Manager, retrieved via Amazon VPC endpoint
+- **[M2]** AWS Secrets Manager 30-day automatic rotation of the Amazon RDS database credentials (hosted single-user rotation in the RDS VPC/isolated subnets)
 - AWS CloudTrail with log file validation and immutable audit log bucket
 - Amazon VPC Flow Logs for network traffic monitoring
-- AWS Lambda code signing via AWS Signer for function integrity
+- **[M6]** Amazon CloudWatch alarms and metric filters for AWS KMS key-deletion attempts, failed AWS Step Functions executions, and unauthorized API calls, routed to a stack-managed Amazon SNS topic
+- **[M7]** AWS Config rules for security-group / network configuration monitoring (rules always deployed; the AWS Config configuration recorder is optional via the `provisionConfigRecorder` flag)
+- **[M5]** AWS Lambda code signing via AWS Signer in ENFORCE mode on the three target Lambda functions (RDS data loader, crawler-trigger, crawler-wait)
 - AWS Glue job concurrency limits to prevent resource exhaustion
+
+> **Previously customer responsibilities, now deployed:** AWS Lake Formation column-level access (formerly P0, now **M1**), AWS Secrets Manager 30-day rotation (formerly P5, now **M2**), Amazon CloudWatch alarms (formerly P3, now **M6**), and AWS Config security-group/network rules (formerly P1, now **M7**) are deployed by this project. See "Implemented security controls" above and `docs/threat-model.md` (Deployed Controls table). The two items below remain customer responsibilities because they cannot be configured through AWS CDK.
 
 ### Customer responsibilities (post-deployment)
 
-Customers should complete the following security actions before using this solution with production data. These controls are not automatically configured by the deployment and are the customer's ongoing responsibility:
+Customers should complete the following security actions before using this solution with production data. These two controls cannot be configured by AWS CDK and remain the customer's ongoing responsibility:
 
-1. **[P0] Configure [AWS Lake Formation](https://aws.amazon.com/lake-formation/)** column-level access controls to restrict access to sensitive fields (SSN, account balances) in the `member_profile` table. Without this, all authenticated users can query unmasked PII.
-
-   ```bash
-   aws lakeformation grant-permissions \
-     --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::ACCOUNT:role/analyst-role"}' \
-     --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn","ssn_last_4","ssn_last_4_key"]}}}' \
-     --permissions SELECT
-   ```
-
-2. **[P1] Deploy [AWS Config](https://aws.amazon.com/config/) rules** for security group change detection (`ec2-security-group-attached-to-eni-periodic`, `vpc-sg-open-only-to-authorized-ports`). Without this, security group changes are logged but not actively monitored.
-
-   ```bash
-   aws configservice put-config-rule --config-rule '{
-     "ConfigRuleName": "ec2-sg-attached-to-eni",
-     "Source": {"Owner": "AWS", "SourceIdentifier": "EC2_SECURITY_GROUP_ATTACHED_TO_ENI_PERIODIC"}
-   }'
-   aws configservice put-config-rule --config-rule '{
-     "ConfigRuleName": "vpc-sg-open-only-authorized-ports",
-     "Source": {"Owner": "AWS", "SourceIdentifier": "VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS"}
-   }'
-   ```
-
-3. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK.
+1. **[P2] Configure MFA Delete** on sensitive Amazon S3 buckets (collect, cleanse, consume). This requires root account credentials and cannot be automated via AWS CDK. The deployment already denies object-version deletion and versioning changes on these buckets (M3); MFA Delete is the residual exception documented under model assumption A007.
 
    ```bash
    aws s3api put-bucket-versioning \
@@ -116,41 +102,11 @@ Customers should complete the following security actions before using this solut
      --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP_CODE"
    ```
 
-4. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
+2. **[P4] Review and customize AWS IAM role permissions** for your specific access requirements. The deployed roles use least-privilege scoping but may need adjustment for your organization's policies.
 
    ```bash
    aws iam list-attached-role-policies --role-name creditunion-REGION-glue-mysql
    aws iam get-role-policy --role-name creditunion-REGION-glue-mysql --policy-name S3Access
-   ```
-
-5. **[P3] Configure Amazon CloudWatch alarms** for security-relevant metrics (failed AWS Step Functions executions, AWS KMS key deletion attempts, unauthorized API calls).
-
-   ```bash
-   aws cloudwatch put-metric-alarm \
-     --alarm-name step-functions-failures \
-     --alarm-description "Alert on Step Functions execution failures" \
-     --metric-name ExecutionsFailed \
-     --namespace AWS/States \
-     --statistic Sum --period 300 --threshold 1 \
-     --comparison-operator GreaterThanOrEqualToThreshold \
-     --evaluation-periods 1
-
-   aws cloudwatch put-metric-alarm \
-     --alarm-name kms-key-deletion-attempts \
-     --alarm-description "Alert on KMS ScheduleKeyDeletion API calls" \
-     --metric-name ScheduleKeyDeletion \
-     --namespace AWS/KMS \
-     --statistic Sum --period 300 --threshold 1 \
-     --comparison-operator GreaterThanOrEqualToThreshold \
-     --evaluation-periods 1
-   ```
-
-6. **[P5] Configure AWS Secrets Manager automatic rotation** for the Amazon RDS database credentials.
-
-   ```bash
-   aws secretsmanager rotate-secret \
-     --secret-id SECRET_ARN \
-     --rotation-rules '{"AutomaticallyAfterDays":30}'
    ```
 
 > **Important:** The sample data in `sample-data/` is entirely synthetic, generated using the Python Faker library. Do not use real customer data without first completing all post-deployment security actions listed above.

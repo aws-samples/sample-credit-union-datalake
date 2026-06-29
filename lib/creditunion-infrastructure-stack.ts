@@ -9,9 +9,16 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as sns from 'aws-cdk-lib/aws-sns';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
 import * as glue from 'aws-cdk-lib/aws-glue';
+import * as lakeformation from 'aws-cdk-lib/aws-lakeformation';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as config from 'aws-cdk-lib/aws-config';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
@@ -32,6 +39,10 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
   public readonly secretsManagerEndpoint: ec2.InterfaceVpcEndpoint;
   public readonly accessLogsBucket: s3.Bucket;
   public readonly glueSecurityConfiguration: glue.CfnSecurityConfiguration;
+  public readonly breakGlassRole: iam.Role;
+  public readonly dataAnalystRole: iam.Role;
+  public readonly securityNotificationTopic: sns.Topic;
+  public readonly lakeFormationSettings: lakeformation.CfnDataLakeSettings;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -360,6 +371,65 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
+    // ==========================================================================
+    // Secrets Manager automatic rotation (R2)
+    // 30-day hosted single-user rotation for the RDS MySQL credential secret.
+    // The rotation Lambda runs in the same VPC isolated subnets as the database,
+    // behind a dedicated security group that permits only egress to the RDS
+    // instance (TCP 3306) and to the Secrets Manager VPC interface endpoint
+    // (TCP 443). No public access, NAT egress, or inbound is configured
+    // (R2.4, R2.5). Single-user rotation keeps the same username, so the Glue
+    // JDBC connection's resolved username stays valid.
+    // ==========================================================================
+
+    // Security group for the Secrets Manager rotation Lambda (no inbound, no
+    // public access; egress is added explicitly below).
+    const rotationSecurityGroup = new ec2.SecurityGroup(this, 'RotationSecurityGroup', {
+      vpc: this.vpc,
+      description: 'Security group for Secrets Manager rotation Lambda',
+      allowAllOutbound: false
+    });
+
+    // Allow the rotation Lambda outbound to the Amazon RDS instance on MySQL port
+    rotationSecurityGroup.addEgressRule(
+      this.databaseSecurityGroup,
+      ec2.Port.tcp(3306),
+      'Allow Secrets Manager rotation Lambda outbound to Amazon RDS for MySQL'
+    );
+
+    // Allow the Amazon RDS instance to receive connections from the rotation Lambda
+    this.databaseSecurityGroup.addIngressRule(
+      rotationSecurityGroup,
+      ec2.Port.tcp(3306),
+      'Allow Secrets Manager rotation Lambda to connect to Amazon RDS for MySQL'
+    );
+
+    // Allow the rotation Lambda outbound HTTPS to the Secrets Manager VPC endpoint
+    // (adds egress on the rotation SG and ingress on the endpoint SG).
+    this.secretsManagerEndpoint.connections.allowDefaultPortFrom(
+      rotationSecurityGroup,
+      'Allow Secrets Manager rotation Lambda to access the Secrets Manager VPC endpoint'
+    );
+
+    // 30-day hosted single-user rotation. rotateImmediatelyOnUpdate is false (D5)
+    // so the first rotation is deferred past deploy — an initial rotation failure
+    // cannot break the hands-off deploy or stale the live credential (R2.7).
+    //
+    // The construct id is deliberately the short 'Rotation' (not
+    // 'DatabaseSecretRotation'): Secrets Manager names the generated hosted
+    // rotation Lambda `<RotationSchedule logical id>-MySQLSingleUser-Lambda`, and
+    // the Lambda functionName has a hard 64-character limit. A longer id pushes
+    // the generated name over 64 and fails CREATE.
+    this.databaseSecret.addRotationSchedule('Rotation', {
+      hostedRotation: secretsmanager.HostedRotation.mysqlSingleUser({
+        vpc: this.vpc,
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        securityGroups: [rotationSecurityGroup]
+      }),
+      automaticallyAfter: cdk.Duration.days(30),
+      rotateImmediatelyOnUpdate: false
+    });
+
     // Per-job AWS IAM roles for AWS Glue — least privilege per ETL job
     const glueBasePolicy = (buckets: s3.Bucket[]) => ({
       S3Access: new iam.PolicyDocument({
@@ -508,6 +578,12 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       autoDeleteObjects: true
     });
 
+    const cloudTrailLogGroup = new logs.LogGroup(this, 'CloudTrailLogGroup', {
+      logGroupName: '/aws/cloudtrail/creditunion',
+      retention: logs.RetentionDays.THREE_MONTHS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
+
     new cloudtrail.Trail(this, 'CreditUnionTrail', {
       bucket: trailBucket,
       trailName: 'creditunion-audit-trail',
@@ -515,11 +591,7 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       includeGlobalServiceEvents: true,
       enableFileValidation: true,
       sendToCloudWatchLogs: true,
-      cloudWatchLogGroup: new logs.LogGroup(this, 'CloudTrailLogGroup', {
-        logGroupName: '/aws/cloudtrail/creditunion',
-        retention: logs.RetentionDays.THREE_MONTHS,
-        removalPolicy: cdk.RemovalPolicy.DESTROY
-      })
+      cloudWatchLogGroup: cloudTrailLogGroup
     });
 
     // Amazon S3 bucket policies — deny access unless from approved IAM roles
@@ -546,6 +618,520 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
           }
         }
       }));
+    }
+
+    // ==========================================================================
+    // Shared security principals (design decision D2)
+    // The Break_Glass_Role and Data_Analyst_Role are provisioned here and shared
+    // with the Data_Stack via stack props (same pattern used for buckets/roles/VPC).
+    // They are referenced as principals by the S3 version-deletion deny (R3) and
+    // KMS deletion-guard (R4) policies, and as Lake Formation grant principals (R1).
+    // ==========================================================================
+
+    // Break-glass administrative role — the only principal permitted destructive
+    // KMS and S3 version-deletion actions. Scoped inline permissions only; no
+    // managed policy attached. Used primarily as a stable principal reference for
+    // the R3/R4 deny exceptions and R1 Lake Formation full-access grants.
+    this.breakGlassRole = new iam.Role(this, 'BreakGlassRole', {
+      roleName: 'creditunion-break-glass-admin',
+      assumedBy: new iam.AccountRootPrincipal(),
+      description: 'Emergency break-glass role for destructive KMS and S3 version-deletion actions',
+      inlinePolicies: {
+        // Destructive KMS actions scoped to the CUDL customer-managed key only.
+        BreakGlassKmsAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: ['kms:ScheduleKeyDeletion', 'kms:DisableKey'],
+              resources: [this.kmsKey.keyArn]
+            })
+          ]
+        }),
+        // Version-deletion and versioning-configuration actions scoped to the three
+        // data-lake buckets only. DeleteObjectVersion requires object-level ARNs;
+        // PutBucketVersioning targets the bucket ARN itself.
+        BreakGlassS3Access: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: ['s3:DeleteObjectVersion'],
+              resources: [
+                `${this.collectBucket.bucketArn}/*`,
+                `${this.cleanseBucket.bucketArn}/*`,
+                `${this.consumeBucket.bucketArn}/*`
+              ]
+            }),
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: ['s3:PutBucketVersioning'],
+              resources: [
+                this.collectBucket.bucketArn,
+                this.cleanseBucket.bucketArn,
+                this.consumeBucket.bucketArn
+              ]
+            })
+          ]
+        })
+      }
+    });
+
+    // Data-analyst role — the concrete analyst principal targeted by the R1
+    // Lake Formation column-excluded SELECT grants. Carries no IAM data-access
+    // policy of its own; all data access is governed by Lake Formation.
+    this.dataAnalystRole = new iam.Role(this, 'DataAnalystRole', {
+      roleName: 'creditunion-data-analyst',
+      assumedBy: new iam.AccountRootPrincipal(),
+      description: 'Data analyst role; data access governed by Lake Formation column-level grants'
+    });
+
+    // ==========================================================================
+    // AWS Lake Formation data lake administrators (R1.7)
+    // Designate the CDK deployment / CloudFormation execution role and the
+    // Break_Glass_Role as data lake administrators so the Data_Stack's Lake
+    // Formation location registrations and column-level grants succeed hands-off.
+    //
+    // This is intentionally created in the Infrastructure_Stack (not the
+    // Data_Stack where the grants live): PutDataLakeSettings is eventually
+    // consistent, and designating the admin in the SAME CloudFormation operation
+    // as the grants races the propagation and fails with AccessDenied
+    // ("requester is not authorized"). The Infrastructure_Stack deploys and fully
+    // completes before the Data_Stack changeset runs, so the admin designation is
+    // propagated well before the registrations/grants execute.
+    // ==========================================================================
+    const bootstrapQualifier =
+      this.node.tryGetContext('@aws-cdk/core:bootstrapQualifier') ??
+      cdk.DefaultStackSynthesizer.DEFAULT_QUALIFIER;
+    const lakeFormationAdminRoleArn = `arn:${cdk.Aws.PARTITION}:iam::${this.account}:role/cdk-${bootstrapQualifier}-cfn-exec-role-${this.account}-${this.region}`;
+    this.lakeFormationSettings = new lakeformation.CfnDataLakeSettings(this, 'DataLakeSettings', {
+      admins: [
+        { dataLakePrincipalIdentifier: lakeFormationAdminRoleArn },
+        { dataLakePrincipalIdentifier: this.breakGlassRole.roleArn }
+      ]
+    });
+
+    // Break-glass role — scoped object-level S3 access for emergency version deletion.
+    // s3:DeleteObjectVersion is an object-level action and requires object-path ARNs;
+    // the wildcard applies only to objects within the three specific data-lake bucket
+    // ARNs (not Resource::*), matching the object-level convention used by the Glue roles.
+    NagSuppressions.addResourceSuppressions(this.breakGlassRole, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Break-glass emergency role: s3:DeleteObjectVersion is an object-level action that requires object-path ARNs. Wildcards are scoped to objects within the collect, cleanse, and consume bucket ARNs only. KMS and PutBucketVersioning permissions carry no wildcard. See docs/security-exceptions.md.',
+        appliesTo: [
+          'Resource::<CollectBucket1C9CFA0A.Arn>/*',
+          'Resource::<CleanseBucket5BF2E7B2.Arn>/*',
+          'Resource::<ConsumeBucketC306BBE5.Arn>/*'
+        ]
+      }
+    ], true);
+
+    // Literal ARN of the break-glass role (its physical name is fixed above).
+    // Used in the R3 S3 deny and R4 KMS deny conditions INSTEAD of
+    // this.breakGlassRole.roleArn. Referencing the role via Fn::GetAtt in those
+    // resource policies — while the role's own inline policy references the bucket
+    // and KMS key ARNs — would create a CloudFormation dependency cycle
+    // (key/bucket <-> role). A literal ARN string carries no resource dependency,
+    // breaking the cycle while matching identically under ArnNotLike. Partition is
+    // pinned to `aws`, consistent with the existing role/cdk-* exemptions above.
+    const breakGlassRoleArn = `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/creditunion-break-glass-admin`;
+
+    // ==========================================================================
+    // S3 version-deletion and versioning deny policies (R3)
+    // For the three data-lake buckets ONLY (collect, cleanse, consume) — NOT the
+    // access-logs or CloudTrail buckets (R3.4) — deny destructive version-level
+    // operations to every principal except the Break_Glass_Role and the CDK /
+    // CloudFormation deployment principals:
+    //   - s3:DeleteObjectVersion on ${bucketArn}/* (R3.1)
+    //   - s3:PutBucketVersioning  on ${bucketArn}   (R3.2)
+    // These statements deliberately OMIT s3:DeleteObject and s3:PutObject so the
+    // ETL_Writer_Role keeps normal overwrite / current-version delete-marker
+    // behavior (R3.3); versioning stays enabled (R3.5). Exemptions are expressed
+    // via an aws:PrincipalArn ArnNotLike condition (Break_Glass_Role ARN, the CDK
+    // deployment principals role/cdk-* and role/CreditUnion* — which covers the
+    // autoDeleteObjects purge role created under the stack name) plus a
+    // StringNotEquals carve-out for the cloudformation.amazonaws.com service
+    // principal, mirroring the DenyUnauthorizedAccess statement above. Because the
+    // deny only applies when ALL conditions are true, any exempted principal (or a
+    // CloudFormation service-principal call) is not denied, so autoDeleteObjects
+    // still empties the buckets on destroy (R3.8) and create/update versioning
+    // configuration is not blocked.
+    const versionDenyExemptions = {
+      ArnNotLike: {
+        'aws:PrincipalArn': [
+          breakGlassRoleArn,
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`,
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/CreditUnion*`,
+        ]
+      },
+      StringNotEquals: {
+        'aws:PrincipalServiceName': [
+          'cloudformation.amazonaws.com',
+        ]
+      }
+    };
+
+    for (const bucket of [this.collectBucket, this.cleanseBucket, this.consumeBucket]) {
+      // Deny s3:DeleteObjectVersion on object versions (object-level ARN) (R3.1)
+      bucket.addToResourcePolicy(new iam.PolicyStatement({
+        sid: 'DenyObjectVersionDeletion',
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ['s3:DeleteObjectVersion'],
+        resources: [`${bucket.bucketArn}/*`],
+        conditions: versionDenyExemptions
+      }));
+
+      // Deny s3:PutBucketVersioning on the bucket itself (R3.2)
+      bucket.addToResourcePolicy(new iam.PolicyStatement({
+        sid: 'DenyVersioningConfigurationChange',
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ['s3:PutBucketVersioning'],
+        resources: [bucket.bucketArn],
+        conditions: versionDenyExemptions
+      }));
+    }
+
+    // ==========================================================================
+    // Shared security notification topic (design decision D4)
+    // A single KMS-encrypted, SSL-enforced Amazon SNS topic is shared by the
+    // R4 KMS-deletion EventBridge rule and the three R6 CloudWatch alarms. It is
+    // exposed as a public readonly property and consumed by those controls.
+    // ==========================================================================
+    this.securityNotificationTopic = new sns.Topic(this, 'SecurityNotificationTopic', {
+      topicName: 'creditunion-security-notifications',
+      masterKey: this.kmsKey,   // AwsSolutions-SNS2 — encryption at rest with the CUDL CMK
+      enforceSSL: true          // AwsSolutions-SNS3 — deny non-TLS publish/subscribe via topic policy
+    });
+
+    // KMS key-policy grants so EventBridge (R4) and CloudWatch (R6) can publish to
+    // the encrypted topic. Both services must call kms:GenerateDataKey* and kms:Decrypt
+    // to produce the data key that encrypts the published message. Scoped by
+    // aws:SourceArn to CUDL EventBridge rules and CloudWatch alarms in this account/region.
+    this.kmsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowEventBridgePublishToEncryptedTopic',
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.ServicePrincipal('events.amazonaws.com')],
+      actions: ['kms:GenerateDataKey*', 'kms:Decrypt'],
+      resources: ['*'],
+      conditions: {
+        ArnLike: {
+          'aws:SourceArn': `arn:aws:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:rule/*`
+        }
+      }
+    }));
+
+    this.kmsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowCloudWatchAlarmsPublishToEncryptedTopic',
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.ServicePrincipal('cloudwatch.amazonaws.com')],
+      actions: ['kms:GenerateDataKey*', 'kms:Decrypt'],
+      resources: ['*'],
+      conditions: {
+        ArnLike: {
+          'aws:SourceArn': `arn:aws:cloudwatch:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:alarm:*`
+        }
+      }
+    }));
+
+    // ==========================================================================
+    // KMS key deletion guard and monitoring (R4)
+    // Destructive KMS operations on the CUDL customer-managed key are restricted
+    // to the Break_Glass_Role (and, for ScheduleKeyDeletion, the CDK deployment
+    // role so `cdk destroy` works), and an EventBridge rule routes any such API
+    // call to the shared security SNS topic for detection.
+    //
+    // Lockout avoidance (design decision D7): denials are CONDITION-based on an
+    // aws:PrincipalArn ArnNotLike condition, NEVER NotPrincipal, and the account
+    // root ARN is ALWAYS in the exception list. A Deny that catches root (or uses
+    // NotPrincipal) can produce an unrecoverable key policy. Because the deny only
+    // applies when the calling principal is NOT in the exemption list, root, the
+    // Break_Glass_Role, and the CDK deployment role are never denied, keeping the
+    // key recoverable and `cdk destroy` (which schedules deletion via the
+    // deployment role under RemovalPolicy.DESTROY) unblocked (R4.8). Auto key
+    // rotation (enableKeyRotation: true) is retained on the key above (R4.3).
+    // ==========================================================================
+
+    // The account root ARN is always exempt so the key never becomes unrecoverable.
+    const accountRootArn = `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:root`;
+    // The CDK deployment role pattern (consistent with the role/cdk-* exemptions
+    // used in the S3 bucket policies above) — schedules key deletion on destroy.
+    const cdkDeploymentRoleArn = `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*`;
+
+    // Deny kms:ScheduleKeyDeletion to every principal except the account root,
+    // the Break_Glass_Role, and the CDK deployment role (R4.1, R4.8).
+    this.kmsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyScheduleKeyDeletion',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['kms:ScheduleKeyDeletion'],
+      resources: ['*'],
+      conditions: {
+        ArnNotLike: {
+          'aws:PrincipalArn': [
+            accountRootArn,
+            breakGlassRoleArn,
+            cdkDeploymentRoleArn
+          ]
+        }
+      }
+    }));
+
+    // Deny kms:DisableKey to every principal except the account root and the
+    // Break_Glass_Role (R4.2). cdk deploy/destroy never disables the key, so the
+    // CDK deployment role is intentionally not exempted here.
+    this.kmsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'DenyDisableKey',
+      effect: iam.Effect.DENY,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['kms:DisableKey'],
+      resources: ['*'],
+      conditions: {
+        ArnNotLike: {
+          'aws:PrincipalArn': [
+            accountRootArn,
+            breakGlassRoleArn
+          ]
+        }
+      }
+    }));
+
+    // EventBridge rule on the default bus matching CloudTrail-delivered KMS API
+    // calls (ScheduleKeyDeletion / DisableKey) against the CUDL key, routed to the
+    // shared security SNS topic (R4.5, D4). The existing CloudTrail trail already
+    // captures management events (R4.4); delivery is within the CloudTrail
+    // management-event window (R4.6). The rule and topic are stack-managed and
+    // removed on destroy (R4.8).
+    new events.Rule(this, 'KmsKeyDeletionGuardRule', {
+      ruleName: 'creditunion-kms-deletion-guard',
+      description: 'Alerts on kms:ScheduleKeyDeletion / kms:DisableKey against the CUDL key',
+      eventPattern: {
+        source: ['aws.kms'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['kms.amazonaws.com'],
+          eventName: ['ScheduleKeyDeletion', 'DisableKey'],
+          requestParameters: {
+            keyId: [this.kmsKey.keyArn, this.kmsKey.keyId]
+          }
+        }
+      },
+      targets: [new targets.SnsTopic(this.securityNotificationTopic)]
+    });
+
+    // ==========================================================================
+    // Detective CloudWatch metric filters and alarms (R6)
+    // Two metric filters on the existing /aws/cloudtrail/creditunion log group
+    // turn CloudTrail-delivered events into custom metrics, and three alarms route
+    // to the shared security SNS topic (R6.5, D4). All alarms use a threshold of
+    // >= 1, a 300-second period, and treatMissingData = NOT_BREACHING so that an
+    // absence of matching events does not place the alarm in ALARM state (R6.1–R6.3).
+    // The CloudTrail log group and trail are pre-existing/stack-managed and retained
+    // independently; the metric filters and alarms are stack-managed and removed on
+    // destroy (R6.7).
+    // ==========================================================================
+
+    const SECURITY_METRIC_NAMESPACE = 'CreditUnion/Security';
+    const alarmSnsAction = new cloudwatch_actions.SnsAction(this.securityNotificationTopic);
+
+    // Metric filter: KMS deletion/disable attempts (R6.4 supporting R6.1).
+    // Matches CloudTrail records for kms:ScheduleKeyDeletion or kms:DisableKey.
+    const kmsDeletionMetricFilter = cloudTrailLogGroup.addMetricFilter('KmsDeletionMetricFilter', {
+      filterName: 'creditunion-kms-deletion',
+      filterPattern: logs.FilterPattern.any(
+        logs.FilterPattern.stringValue('$.eventName', '=', 'ScheduleKeyDeletion'),
+        logs.FilterPattern.stringValue('$.eventName', '=', 'DisableKey')
+      ),
+      metricNamespace: SECURITY_METRIC_NAMESPACE,
+      metricName: 'KmsDeletionAttempts',
+      metricValue: '1',
+      defaultValue: 0
+    });
+
+    // Metric filter: unauthorized API calls (R6.4 supporting R6.3).
+    // Matches CloudTrail records whose errorCode is *UnauthorizedOperation or AccessDenied*.
+    const unauthorizedApiMetricFilter = cloudTrailLogGroup.addMetricFilter('UnauthorizedApiMetricFilter', {
+      filterName: 'creditunion-unauthorized-api',
+      filterPattern: logs.FilterPattern.any(
+        logs.FilterPattern.stringValue('$.errorCode', '=', '*UnauthorizedOperation'),
+        logs.FilterPattern.stringValue('$.errorCode', '=', 'AccessDenied*')
+      ),
+      metricNamespace: SECURITY_METRIC_NAMESPACE,
+      metricName: 'UnauthorizedApiCalls',
+      metricValue: '1',
+      defaultValue: 0
+    });
+
+    // Alarm 1: KMS ScheduleKeyDeletion / DisableKey attempts (R6.1).
+    new cloudwatch.Alarm(this, 'KmsDeletionAlarm', {
+      alarmName: 'creditunion-kms-deletion-attempts',
+      alarmDescription: 'Triggers on kms:ScheduleKeyDeletion / kms:DisableKey attempts against the CUDL key',
+      metric: kmsDeletionMetricFilter.metric({
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(5)
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    }).addAlarmAction(alarmSnsAction);
+
+    // Alarm 2: Step Functions ExecutionsFailed for the ETL state machine (R6.2).
+    // The metric is built BY ARN/dimensions using the known state-machine name to
+    // avoid a circular cross-stack reference (Infrastructure is created before ETL).
+    const etlStateMachineArn = `arn:aws:states:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:stateMachine:creditunion-etl-state-machine`;
+    new cloudwatch.Alarm(this, 'EtlExecutionsFailedAlarm', {
+      alarmName: 'creditunion-etl-executions-failed',
+      alarmDescription: 'Triggers when the creditunion-etl-state-machine reports a failed execution',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/States',
+        metricName: 'ExecutionsFailed',
+        dimensionsMap: {
+          StateMachineArn: etlStateMachineArn
+        },
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(5)
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    }).addAlarmAction(alarmSnsAction);
+
+    // Alarm 3: unauthorized API calls (R6.3).
+    new cloudwatch.Alarm(this, 'UnauthorizedApiAlarm', {
+      alarmName: 'creditunion-unauthorized-api-calls',
+      alarmDescription: 'Triggers on AccessDenied / UnauthorizedOperation API calls recorded in CloudTrail',
+      metric: unauthorizedApiMetricFilter.metric({
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(5)
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    }).addAlarmAction(alarmSnsAction);
+
+    // ==========================================================================
+    // AWS Config rules + optional configuration recorder (R7)
+    // Two AWS managed Config rules are ALWAYS emitted regardless of the flag
+    // (R7.1, R7.2, R7.5, R7.7); they evaluate against whatever configuration
+    // recorder is present in the account/region. The recorder, delivery channel,
+    // and Config role are gated behind the `provisionConfigRecorder` CDK context
+    // flag, which DEFAULTS TO FALSE (R7.3, R7.4, D6). Because an account/region
+    // supports only one configuration recorder, AWS::Config::ConfigurationRecorder
+    // creation FAILS the deployment if one already exists and CloudFormation does
+    // NOT overwrite it (R7.6) — this is the natural CFN behavior, no extra code.
+    // On destroy, only CUDL-provisioned resources are removed; a pre-existing
+    // recorder is never deleted or modified (R7.8, R7.9).
+    // ==========================================================================
+
+    // Rule 1 (R7.1): security groups may only open ports in an authorized set,
+    // which defaults to EMPTY (any 0.0.0.0/0 or ::/0 inbound TCP/UDP port is
+    // non-compliant). The optional authorizedTcpPorts/authorizedUdpPorts input
+    // parameters are intentionally OMITTED rather than passed as empty strings:
+    // AWS Config rejects blank parameter values ("Blank spaces are not acceptable
+    // for input parameter") at create time, and an absent parameter is treated as
+    // an empty authorized set — i.e. no open port is permitted by default.
+    new config.CfnConfigRule(this, 'SgOpenOnlyToAuthorizedPortsRule', {
+      configRuleName: 'creditunion-vpc-sg-open-only-to-authorized-ports',
+      description: 'Flags security groups that allow unrestricted inbound access (0.0.0.0/0 or ::/0) on TCP or UDP ports outside the authorized set (defaults to empty).',
+      source: {
+        owner: 'AWS',
+        sourceIdentifier: 'VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS'
+      }
+    });
+
+    // Rule 2 (R7.2): the CUDL VPC's default security group must allow no inbound
+    // or outbound traffic. Scoped to the VPC default security group resource id
+    // so the rule targets only the CUDL VPC's default SG.
+    new config.CfnConfigRule(this, 'DefaultSecurityGroupClosedRule', {
+      configRuleName: 'creditunion-default-security-group-closed',
+      description: 'Flags the CUDL VPC default security group as non-compliant if it allows any inbound or outbound traffic.',
+      source: {
+        owner: 'AWS',
+        sourceIdentifier: 'VPC_DEFAULT_SECURITY_GROUP_CLOSED'
+      },
+      scope: {
+        complianceResourceTypes: ['AWS::EC2::SecurityGroup'],
+        complianceResourceId: this.vpc.vpcDefaultSecurityGroup
+      }
+    });
+
+    // Optional configuration recorder / delivery channel / Config role (R7.3).
+    // Read the flag from CDK context; only `=== true` enables provisioning so an
+    // unset or non-true value defaults to false (R7.4).
+    const provisionConfigRecorder = this.node.tryGetContext('provisionConfigRecorder') === true;
+    if (provisionConfigRecorder) {
+      // Dedicated S3 bucket for AWS Config snapshot/history delivery, following
+      // the existing data-lake bucket conventions (KMS encryption, block public
+      // access, enforce SSL, versioned, DESTROY + autoDelete, access logging).
+      const configBucket = new s3.Bucket(this, 'ConfigBucket', {
+        bucketName: `creditunion-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}-config`,
+        encryption: s3.BucketEncryption.KMS,
+        encryptionKey: this.kmsKey,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        versioned: true,
+        serverAccessLogsBucket: this.accessLogsBucket,
+        serverAccessLogsPrefix: 'config/',
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        autoDeleteObjects: true
+      });
+
+      // Config service role using the AWS managed AWS_ConfigRole policy. This
+      // raises AwsSolutions-IAM4; the suppression (appliesTo pinned to
+      // AWS_ConfigRole) is deferred to task 5.1. Because the recorder is gated
+      // behind a default-false flag, the default synth path never includes this
+      // role, so the default cdk-nag run stays clean.
+      const configRole = new iam.Role(this, 'ConfigRole', {
+        roleName: `creditunion-${cdk.Aws.REGION}-config-recorder`,
+        assumedBy: new iam.ServicePrincipal('config.amazonaws.com'),
+        description: 'Service role for the optional AWS Config configuration recorder',
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWS_ConfigRole')
+        ]
+      });
+
+      // Allow AWS Config to write encrypted snapshots to the Config bucket.
+      configBucket.grantWrite(configRole);
+
+      // Exactly one configuration recorder (R7.3). Records all supported
+      // resource types so the security-group rules have configuration items to
+      // evaluate against.
+      const configurationRecorder = new config.CfnConfigurationRecorder(this, 'ConfigurationRecorder', {
+        name: 'creditunion-config-recorder',
+        roleArn: configRole.roleArn,
+        recordingGroup: {
+          allSupported: true,
+          includeGlobalResourceTypes: true
+        }
+      });
+
+      // Exactly one delivery channel (R7.3) delivering to the dedicated bucket.
+      const deliveryChannel = new config.CfnDeliveryChannel(this, 'ConfigDeliveryChannel', {
+        name: 'creditunion-config-delivery-channel',
+        s3BucketName: configBucket.bucketName
+      });
+
+      // The delivery channel must exist alongside the recorder; order their
+      // creation so the bucket grant is in place before the recorder starts.
+      deliveryChannel.node.addDependency(configurationRecorder);
+
+      // cdk-nag suppressions for the optional Config recorder role (R7, R9.11).
+      // Added inside the gated block so they only apply when the role exists.
+      // See docs/security-exceptions.md (Exception 6).
+      NagSuppressions.addResourceSuppressions(configRole, [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'The AWS managed AWS_ConfigRole policy is required by the AWS Config configuration recorder service role to read configuration items across supported resource types. It cannot be replaced with a custom policy without breaking AWS Config. Exception 6 in docs/security-exceptions.md.',
+          appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWS_ConfigRole']
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Object-level write access (s3:PutObject* / s3:Abort*) plus the corresponding KMS wildcards (kms:GenerateDataKey* / kms:ReEncrypt*) on the dedicated, KMS-encrypted Config delivery bucket are required for AWS Config to deliver configuration snapshots/history. The wildcards are scoped to the Config bucket object path and the data-lake customer-managed key only. Exception 6 in docs/security-exceptions.md.'
+        }
+      ], true);
     }
 
     // Outputs
@@ -637,13 +1223,9 @@ export class CreditUnionInfrastructureStack extends cdk.Stack {
       }
     ]);
 
-    // Secrets Manager automatic rotation
-    NagSuppressions.addResourceSuppressions(this.databaseSecret, [
-      {
-        id: 'AwsSolutions-SMG4',
-        reason: 'Automatic rotation is documented as a post-deployment customer responsibility (P5 in README.md). Enabling rotation requires a rotation Lambda with database-specific configuration, which is intentionally left to the customer.'
-      }
-    ]);
+    // Secrets Manager automatic rotation is configured via a 30-day hosted
+    // single-user rotation schedule (see the rotation block above), so the
+    // AwsSolutions-SMG4 suppression is intentionally removed (R2.8).
 
     // CDK-generated BucketDeployment Lambda (internal CDK construct)
     NagSuppressions.addResourceSuppressionsByPath(this, [

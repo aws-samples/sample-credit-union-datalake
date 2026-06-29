@@ -14,6 +14,9 @@ cdk.context.json
 .vscode/
 .idea/
 
+# Kiro spec artifacts (not for publication)
+.kiro/
+
 # OS
 .DS_Store
 Thumbs.db

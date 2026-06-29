@@ -37,12 +37,18 @@ const dataStack = new CreditUnionDataStack(app, 'CreditUnionDataStack', {
   cleanseBucket: infrastructureStack.cleanseBucket,
   consumeBucket: infrastructureStack.consumeBucket,
   glueRoleMysql: infrastructureStack.glueRoleMysql,
+  glueRoleXml: infrastructureStack.glueRoleXml,
+  glueRoleCsv: infrastructureStack.glueRoleCsv,
+  glueRoleMember360: infrastructureStack.glueRoleMember360,
   glueSecurityGroup: infrastructureStack.glueSecurityGroup,
   database: infrastructureStack.database,
   databaseSecret: infrastructureStack.databaseSecret,
   databaseSecurityGroup: infrastructureStack.databaseSecurityGroup,
   vpc: infrastructureStack.vpc,
-  secretsManagerEndpoint: infrastructureStack.secretsManagerEndpoint
+  secretsManagerEndpoint: infrastructureStack.secretsManagerEndpoint,
+  breakGlassRole: infrastructureStack.breakGlassRole,
+  dataAnalystRole: infrastructureStack.dataAnalystRole,
+  accessLogsBucket: infrastructureStack.accessLogsBucket
 });
 
 // ETL Stack (AWS Glue Jobs, Step Functions)
@@ -76,7 +82,9 @@ const triggerStack = new CreditUnionTriggerStack(app, 'CreditUnionTriggerStack',
   description: 'Credit Union Analytics Platform - Full Automation (RDS → Crawlers → ETL)',
   rdsLambdaFunctionName: dataStack.rdsDataLoader.lambda.functionName,
   crawlerLambdaFunctionName: dataStack.crawlerTriggerFunction.functionName,
-  stepFunctionArn: etlStack.stepFunction.stateMachineArn
+  stepFunctionArn: etlStack.stepFunction.stateMachineArn,
+  kmsKey: infrastructureStack.kmsKey,
+  accessLogsBucket: infrastructureStack.accessLogsBucket
 });
 
 // Add dependencies
