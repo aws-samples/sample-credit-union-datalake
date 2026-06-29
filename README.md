@@ -53,9 +53,12 @@ A complete, deployable Member 360 data lake for credit unions built with the [AW
                     └──────────────────┬──────────────────────┘
                                        │
                          ┌─────────────┴─────────────┐
-                         │                           │
-                    Amazon Athena            Amazon QuickSight
+                         │     Query / BI (optional)  │
+                         │  Amazon Athena · QuickSight │
+                         └────────────────────────────┘
 ```
+
+> The consume zone is queryable as-is with Amazon Athena. Amazon QuickSight is an optional downstream BI layer and is **not** deployed by this project.
 
 ## Security
 
@@ -157,18 +160,24 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
 ├── bin/cdk.ts                              # CDK app entry point
 ├── lib/
 │   ├── creditunion-infrastructure-stack.ts  # VPC, RDS, S3, KMS, IAM
-│   ├── creditunion-data-stack.ts            # AWS Glue Catalog, Crawlers, Connections
+│   ├── creditunion-data-stack.ts            # AWS Glue Catalog, Crawlers, Connections, Lake Formation
 │   ├── creditunion-etl-stack.ts             # AWS Glue Jobs, AWS Step Functions
 │   ├── creditunion-trigger-stack.ts         # Automation (Custom Resources)
 │   ├── visual-etl-simple.ts                 # AWS Glue Job Definitions
-│   └── rds-data-loader.ts                   # RDS Data Loading Construct
+│   ├── rds-data-loader.ts                   # RDS Data Loading Construct
+│   └── signed-lambda-artifact.ts            # AWS Signer code-signing construct
+├── lambda/                                  # Lambda handlers (code-signed)
+│   ├── rds-data-loader/index.py             # RDS loader handler
+│   ├── crawler-trigger/index.py             # Crawler trigger handler
+│   └── crawler-wait/index.py                # Crawler wait handler
 ├── scripts/
 │   ├── creditunion-visual-mysql-etl.py      # MySQL → Parquet
 │   ├── creditunion-xml-collect-to-cleanse-visual.py  # XML → Parquet
 │   ├── creditunion_CSV_collect_to_cleanse_visual.py  # CSV → Parquet
 │   └── creditunion-member-360-visual-etl.py # Member 360 aggregation
+├── layers/pymysql/                          # Vendored PyMySQL Lambda layer
 ├── sample-data/                             # Synthetic data (auto-uploaded to S3)
-├── test/cdk.test.ts                         # CDK synthesis tests
+├── test/                                     # CDK assertion + construct tests (Jest)
 ├── LICENSE                                  # Apache 2.0
 ├── NOTICE                                   # Copyright + synthetic data disclaimer
 └── CONTRIBUTING.md                          # Contribution guidelines
@@ -251,6 +260,17 @@ With AWS Free Tier: ~$3.50. Run `cdk destroy --all` after testing to stop charge
 ```bash
 cdk destroy --all --force
 ```
+
+## Tests
+
+The project ships CDK assertion and construct tests (Jest). Run them with:
+
+```bash
+npm install
+npm test
+```
+
+The suite validates resource counts, encryption, public-access blocks, KMS rotation, Lambda code-signing, and the AWS Lake Formation column/data-location controls across all four stacks.
 
 ## Contributing
 
