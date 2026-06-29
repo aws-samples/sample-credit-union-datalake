@@ -46,7 +46,7 @@ This project has undergone multiple rounds of automated security scanning using 
 
 Security controls implemented in this project have been verified through:
 
-1. **Automated CDK synthesis tests** — 11 tests validate all 4 stacks synthesize correctly with expected resource counts and configurations
+1. **Automated CDK synthesis tests** — 53 tests validate all 4 stacks synthesize correctly with expected resource counts and configurations
    ```bash
    npx jest --verbose
    ```
