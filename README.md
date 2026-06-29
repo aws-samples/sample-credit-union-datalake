@@ -87,7 +87,7 @@ The following controls are deployed by this project as a baseline. Customers sho
 - **[M5]** AWS Lambda code signing via AWS Signer in ENFORCE mode on the three target Lambda functions (RDS data loader, crawler-trigger, crawler-wait)
 - AWS Glue job concurrency limits to prevent resource exhaustion
 
-> **Previously customer responsibilities, now deployed:** AWS Lake Formation column-level access (formerly P0, now **M1**), AWS Secrets Manager 30-day rotation (formerly P5, now **M2**), Amazon CloudWatch alarms (formerly P3, now **M6**), and AWS Config security-group/network rules (formerly P1, now **M7**) are deployed by this project. See "Implemented security controls" above and `docs/threat-model.md` (Deployed Controls table). The two items below remain customer responsibilities because they cannot be configured through AWS CDK.
+> **Previously customer responsibilities, now deployed:** AWS Lake Formation column-level access (formerly P0, now **M1**), AWS Secrets Manager 30-day rotation (formerly P5, now **M2**), Amazon CloudWatch alarms (formerly P3, now **M6**), and AWS Config security-group/network rules (formerly P1, now **M7**) are deployed by this project. See "Implemented security controls" above. The two items below remain customer responsibilities because they cannot be configured through AWS CDK.
 
 ### Customer responsibilities (post-deployment)
 

@@ -54,3 +54,11 @@ docs/pcsr-guardian-response.md
 docs/pcsr-scan-scope.md
 docs/pcsr-ticket-package.md
 redeploy-fresh.sh
+
+# Internal security-review documentation (not customer-facing; kept local for the PCSR ticket)
+docs/threat-model.md
+docs/security-assessment.md
+docs/security-exceptions.md
+docs/security-guidelines.md
+docs/data-classification.md
+docs/key-management-strategy.md
