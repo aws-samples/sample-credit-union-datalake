@@ -1,7 +1,7 @@
 {
   "name": "creditunion-analytics-cdk",
   "version": "0.1.0",
-  "license": "Apache-2.0",
+  "license": "MIT-0",
   "bin": {
     "cdk": "bin/cdk.js"
   },

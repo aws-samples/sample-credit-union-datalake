@@ -1,5 +1,5 @@
 <!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT-0 -->
 
 # Credit Union Data Lake (CUDL)
 
@@ -178,7 +178,7 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
 ├── layers/pymysql/                          # Vendored PyMySQL Lambda layer
 ├── sample-data/                             # Synthetic data (auto-uploaded to S3)
 ├── test/                                     # CDK assertion + construct tests (Jest)
-├── LICENSE                                  # Apache 2.0
+├── LICENSE                                  # MIT-0
 ├── NOTICE                                   # Copyright + synthetic data disclaimer
 └── CONTRIBUTING.md                          # Contribution guidelines
 ```
@@ -278,4 +278,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+This project is licensed under the MIT-0 License. See [LICENSE](LICENSE).

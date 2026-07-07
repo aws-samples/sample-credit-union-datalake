@@ -1,6 +1,6 @@
 #!/bin/bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 #
 # Integration tests for the deployed Credit Union Data Lake infrastructure.
 # Validates that all AWS resources exist, are configured correctly, and can communicate.

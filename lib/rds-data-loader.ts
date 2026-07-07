@@ -1,5 +1,5 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT-0
 //
 // Amazon Relational Database Service (Amazon RDS) data loader construct.
 // Loads sample CSV data into Amazon RDS for MySQL via AWS Lambda.

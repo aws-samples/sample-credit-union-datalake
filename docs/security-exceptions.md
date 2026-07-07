@@ -1,5 +1,5 @@
 <!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT-0 -->
 
 # Security Exceptions Register
 
@@ -51,17 +51,9 @@ This document records approved security exceptions where AWS service requirement
 | **Risk** | Medium — without MFA Delete, a compromised admin could delete bucket versions. Versioning and audit logging provide detection capability. |
 | **Customer action** | Customers should enable MFA Delete using root credentials: `aws s3api put-bucket-versioning --bucket <name> --versioning-configuration Status=Enabled,MFADelete=Enabled --mfa "arn:aws:iam::ACCOUNT:mfa/root-device TOTP"` |
 | **Review schedule** | Check if AWS CDK adds MFA Delete support in future releases |
-## Exception 5 (Priority: Informational): LICENSE File URL Scheme
+## Exception 5 (Withdrawn): LICENSE File URL Scheme
 
-| Field | Value |
-|---|---|
-| **Resource** | `LICENSE` (Apache License 2.0 boilerplate) |
-| **Modification** | The two URLs in the license boilerplate (`https://www.apache.org/licenses/` and `https://www.apache.org/licenses/LICENSE-2.0`) were updated from `http://` to `https://`. |
-| **Reason** | The canonical Apache 2.0 license text as published by the Apache Software Foundation uses `http://` URLs. Security scanners flag these as "Only HTTPS URLs are allowed." The Apache Software Foundation serves both schemes, and `http://` redirects to `https://`. Updating the scheme does not alter the license terms or legal effect — only the URL transport. |
-| **Compensating controls** | (1) URLs resolve to the same canonical Apache 2.0 license document. (2) License text is otherwise unmodified. (3) Project remains fully compliant with Apache 2.0 terms. |
-| **Risk** | None — cosmetic change to URL transport scheme only. |
-| **Approved by** | Project security review |
-| **Review schedule** | None required — permanent modification |
+> **Withdrawn.** This exception documented an `http://`→`https://` URL-scheme fix in the Apache 2.0 license boilerplate. The project is now licensed under **MIT-0**, whose license text contains no such URLs, so this exception no longer applies. Retained (rather than renumbered) to preserve stable Exception numbering referenced elsewhere.
 
 ## Exception 6 (Priority: Low Risk): AWS Config Configuration Recorder Role
 

@@ -1,5 +1,5 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 #
 # Crawler-trigger handler. Externalized from an inline Lambda definition
 # (lib/creditunion-data-stack.ts) so the deployment package can be signed by
