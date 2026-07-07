@@ -1,6 +1,6 @@
 {
   "_copyright": "Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.",
-  "_license": "Apache-2.0",
+  "_license": "MIT-0",
   "app": "npx ts-node --prefer-ts-exts bin/cdk.ts",
   "watch": {
     "include": [

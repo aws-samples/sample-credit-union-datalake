@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT-0 -->
 <cardholders>
   <cardholder>
     <card_member_id>CC_157187</card_member_id>
