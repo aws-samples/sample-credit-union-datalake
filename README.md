@@ -116,13 +116,11 @@ Customers should complete the following security actions before using this solut
 
 ## Quick start
 
-Replace `YOUR_ORG` in the clone commands below with your Git hosting organization or user.
-
 ### Option 1: AWS CloudShell (easiest)
 
 ```bash
-git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
-cd credit-union-data-lake
+git clone https://github.com/aws-samples/sample-credit-union-datalake.git
+cd sample-credit-union-datalake
 npm install
 npm run build
 cdk deploy --all --require-approval never
@@ -133,8 +131,8 @@ cdk deploy --all --require-approval never
 **Prerequisites:** AWS CLI configured, Node.js v18+, AWS CDK v2 (`npm install -g aws-cdk`)
 
 ```bash
-git clone https://github.com/YOUR_ORG/credit-union-data-lake.git
-cd credit-union-data-lake
+git clone https://github.com/aws-samples/sample-credit-union-datalake.git
+cd sample-credit-union-datalake
 npm install
 npm run build
 cdk bootstrap    # first time only
