@@ -1,0 +1,9 @@
+Credit Union Data Lake (CUDL)
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+Licensed under the MIT No Attribution license (MIT-0). See the LICENSE file.
+
+This project includes sample/synthetic data generated using the Python Faker
+library. All names, addresses, Social Security Numbers, phone numbers, and
+email addresses in the sample-data/ directory are entirely fictitious. Any
+resemblance to real persons or entities is purely coincidental.
