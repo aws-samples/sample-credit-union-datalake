@@ -152,6 +152,68 @@ aws glue get-table --database-name creditunion_consume --name member_profile \
   --query 'Table.StorageDescriptor.Columns[].Name'
 ```
 
+## After deployment: query the data lake
+
+The pipeline runs automatically on deploy and writes the unified profile to `creditunion_consume.member_profile`. Before you can query it, it helps to understand how access is governed.
+
+### Access model
+
+The consume and cleanse Amazon S3 buckets are **registered with AWS Lake Formation** and protected by a bucket policy that **denies direct `s3:GetObject`** to any principal outside the pipeline's own roles. This is intentional: it prevents people and tools from reading raw member PII straight out of Amazon S3. All analytical access is expected to flow through AWS Lake Formation, which brokers Amazon S3 access on your behalf using the registration role.
+
+As a result, holding AWS Identity and Access Management (AWS IAM) admin rights is **not** enough to query the data. If you run an Amazon Athena query as a principal that has no AWS Lake Formation grant, Athena falls back to your own identity to read Amazon S3 and you receive an explicit-deny 403.
+
+### Grant a query principal access
+
+Grant the identity you query with (an analyst role, an AWS IAM Identity Center permission set, or the deployed `creditunion-data-analyst` role) `SELECT` on the table through AWS Lake Formation:
+
+```bash
+aws lakeformation grant-permissions \
+  --region <REGION> \
+  --principal DataLakePrincipalIdentifier=arn:aws:iam::<ACCOUNT>:role/<YOUR_QUERY_ROLE> \
+  --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile"}}' \
+  --permissions SELECT
+```
+
+To exclude the tokenized SSN columns from the grant (the least-privilege analyst view), use a column exclusion instead:
+
+```bash
+--resource '{"TableWithColumns":{"DatabaseName":"creditunion_consume","Name":"member_profile","ColumnWildcard":{"ExcludedColumnNames":["ssn_last_4","ssn_last_4_key"]}}}'
+```
+
+Your query principal also needs AWS IAM permissions for the query APIs themselves — `athena:StartQueryExecution` / `athena:GetQueryResults`, `glue:GetTable` / `glue:GetPartitions` / `glue:GetDatabase`, `lakeformation:GetDataAccess`, and read/write to your Athena query-results bucket. It does **not** need `s3:GetObject` on the data buckets; AWS Lake Formation vends that access.
+
+### Run a query
+
+Set an Amazon Athena query-results location, then query as your granted principal:
+
+```bash
+aws athena start-query-execution \
+  --region <REGION> \
+  --query-string "SELECT COUNT(*) FROM creditunion_consume.member_profile;" \
+  --query-execution-context Database=creditunion_consume \
+  --result-configuration OutputLocation=s3://<YOUR_ATHENA_RESULTS_BUCKET>/
+```
+
+See [Sample Athena queries](#sample-athena-queries) for analytics examples.
+
+### Note on AWS Lake Formation hybrid mode
+
+The buckets are registered in AWS Lake Formation **hybrid access mode**, which keeps an `IAM_ALLOWED_PRINCIPALS` fallback on the catalog tables. If a granted principal still hits an Amazon S3 explicit-deny, that fallback is causing Athena to use IAM-based access instead of AWS Lake Formation credential vending. For a fully governed, grant-only model, remove the fallback on the table so AWS Lake Formation brokers all access:
+
+```bash
+aws lakeformation revoke-permissions \
+  --region <REGION> \
+  --principal DataLakePrincipalIdentifier=IAM_ALLOWED_PRINCIPALS \
+  --resource '{"Table":{"DatabaseName":"creditunion_consume","Name":"member_profile"}}' \
+  --permissions ALL
+```
+
+Before doing this, make sure every role that reads or writes the table — including the Member 360 ETL job role `creditunion-<region>-glue-member360` — holds an explicit AWS Lake Formation grant, or the next pipeline run will fail with an insufficient-permissions error.
+
+### Visualize in Amazon QuickSight (optional)
+
+Amazon QuickSight is not deployed by this project. To build dashboards, connect Amazon QuickSight to Amazon Athena and grant the QuickSight service role (`aws-quicksight-service-role-v0`) the same AWS Lake Formation `SELECT` on `member_profile`. Also grant that role access to the customer-managed AWS KMS key (`kms:Decrypt`) and to the Athena query-results bucket. Prefer direct query for sensitive data; if you use SPICE, restrict access to the dataset and dashboards, because SPICE caches the underlying rows.
+
 ## Project structure
 
 ```
@@ -269,6 +331,16 @@ npm test
 ```
 
 The suite validates resource counts, encryption, public-access blocks, KMS rotation, Lambda code-signing, and the AWS Lake Formation column/data-location controls across all four stacks.
+
+## Future improvements
+
+The following enhancements would extend the solution toward production use:
+
+- **Make the analyst role query-ready.** Attach the Amazon Athena, AWS Glue Data Catalog, and AWS Lake Formation query permissions (plus Athena results-bucket access) to the deployed `creditunion-data-analyst` role, so analysts can assume it and query without manual setup. See [After deployment: query the data lake](#after-deployment-query-the-data-lake).
+- **Adopt full AWS Lake Formation governance.** Register the data-lake locations without the hybrid `IAM_ALLOWED_PRINCIPALS` fallback so all access is grant-based and auditable by default.
+- **AWS IAM Identity Center integration.** Map human analysts to the AWS Lake Formation analyst persona through AWS IAM Identity Center so access uses short-lived credentials and aligns with periodic access reviews.
+- **Amazon DynamoDB-backed data lineage and ETL metadata.** Add an Amazon DynamoDB table that records pipeline run metadata as each AWS Glue job executes — job run IDs, source-to-target mappings, input/output row counts, AWS Glue Data Quality results, and timestamps. This creates an auditable, queryable lineage trail (for example, "which run produced this `member_profile` partition, from which sources, and did it pass data-quality checks?") that supports regulatory traceability and troubleshooting. This pattern — using Amazon DynamoDB as the store for data lineage and ETL audit metadata — is described in the Rize blog on data lineage. *(Add the exact blog URL here.)*
+- **Enforced data-quality gates.** Promote the existing AWS Glue Data Quality evaluation from best-effort to enforced gates that block promotion to the consume zone on failure.
 
 ## Contributing
 
