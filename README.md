@@ -212,7 +212,15 @@ Before doing this, make sure every role that reads or writes the table — inclu
 
 ### Visualize in Amazon QuickSight (optional)
 
-Amazon QuickSight is not deployed by this project. To build dashboards, connect Amazon QuickSight to Amazon Athena and grant the QuickSight service role (`aws-quicksight-service-role-v0`) the same AWS Lake Formation `SELECT` on `member_profile`. Also grant that role access to the customer-managed AWS KMS key (`kms:Decrypt`) and to the Athena query-results bucket. Prefer direct query for sensitive data; if you use SPICE, restrict access to the dataset and dashboards, because SPICE caches the underlying rows.
+Amazon QuickSight (Enterprise edition) is not deployed by this project. Connecting it to the Lake Formation-governed consume zone takes three pieces, and the last one is easy to miss:
+
+1. In QuickSight **Security & permissions**, enable access to Amazon Athena and to the Athena query-results bucket.
+2. Add `lakeformation:GetDataAccess` (plus Glue catalog reads) to the QuickSight service role (`aws-quicksight-service-role-v0`) so it can use Lake Formation credential vending.
+3. Grant Lake Formation `DESCRIBE`/`SELECT` on the database and `member_profile` table to the **QuickSight user or group identity** (`arn:aws:quicksight:<region>:<account>:user/default/<user>`) — **not** the IAM service role. Lake Formation evaluates the QuickSight author identity at query time, so a grant only on the service role leaves the table showing as `TABLE_NOT_FOUND`.
+
+Prefer direct query for sensitive data; if you use SPICE, restrict access to the dataset and dashboards, because SPICE caches the underlying rows.
+
+See [docs/quicksight-setup.md](docs/quicksight-setup.md) for the full step-by-step, including the exact commands and a troubleshooting table.
 
 ## Project structure
 
